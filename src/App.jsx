@@ -1,58 +1,54 @@
-import React, { useState } from "react";
+import React, { useState } from 'react';
+import { History, BookOpen, Settings, Menu } from 'lucide-react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import NavItem from './components/NavItem';
+import HistorySection from './components/HistorySection';
+import JournalSection from './components/JournalSection';
+import SettingsSection from './components/SettingSection';
+import { v4 as uuidv4 } from 'uuid';
 
 function App() {
-  const [userInput, setUserInput] = useState("");
-  const [aiResponse, setAiResponse] = useState("");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [entries, setEntries] = useState([]); // Entries will be managed by PostgreSQL later
+  const [newEntry, setNewEntry] = useState("");
 
-  const handleSubmit = async () => {
-    // Placeholder function for sending the prompt to the backend.
-    // Replace this with your actual backend API call when ready.
-    try {
-      const response = await fetch("http://localhost:5000/api/ai-response", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ prompt: userInput }),
-      });
+  function handleAddEntry() {
+    if (!newEntry.trim()) return;
 
-      const data = await response.json();
-      setAiResponse(data.answer || "Error: No response from AI.");
-    } catch (error) {
-      console.error("Error communicating with backend:", error);
-      setAiResponse("Error: Could not connect to the backend.");
-    }
-  };
+    const newEntryObj = {
+      id: uuidv4(),
+      date: new Date().toISOString().split("T")[0],
+      content: newEntry,
+    };
+
+    setEntries([newEntryObj, ...entries]); // For now, update state. Will interact with PostgreSQL later
+    setNewEntry("");
+  }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col items-center py-10 px-4">
-      <div className="max-w-3xl w-full bg-white shadow-lg rounded-2xl p-6">
-        <h1 className="text-3xl font-bold text-center text-gray-800 mb-4">AI Journaling</h1>
+    <Router>
+      <div className="flex h-screen bg-neutral-50 text-neutral-800 font-sans">
+        <aside className={`bg-white shadow-md flex flex-col items-center py-8 space-y-8 transition-all duration-300 ${isSidebarOpen ? "w-40" : "w-16"} sm:w-16`}>
+          <button className="p-2 rounded-lg hover:bg-neutral-100 transition-colors duration-200 sm:hidden" onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
+            <Menu className="w-6 h-6 text-neutral-600" />
+          </button>
+          <NavItem icon={History} label="History" to="/history" />
+          <NavItem icon={BookOpen} label="Journal" to="/journal" />
+          <NavItem icon={Settings} label="Settings" to="/settings" />
+        </aside>
 
-        {/* Text Editor */}
-        <textarea
-          className="w-full h-40 p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none"
-          placeholder="Write your thoughts or prompts here..."
-          value={userInput}
-          onChange={(e) => setUserInput(e.target.value)}
-        ></textarea>
-
-        <button
-          onClick={handleSubmit}
-          className="mt-4 w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg transition-all"
-        >
-          Submit to AI
-        </button>
-
-        {/* AI Response */}
-        {aiResponse && (
-          <div className="mt-6 bg-gray-100 p-4 rounded-lg border border-gray-300">
-            <h2 className="text-xl font-semibold text-gray-700">AI Response:</h2>
-            <p className="mt-2 text-gray-600 whitespace-pre-wrap">{aiResponse}</p>
+        <main className="flex-1 flex flex-col items-center justify-center p-8 w-full">
+          <div className="w-full max-w-screen">
+            <Routes>
+              <Route path="/history" element={<HistorySection entries={entries} />} />
+              <Route path="/journal" element={<JournalSection newEntry={newEntry} setNewEntry={setNewEntry} handleAddEntry={handleAddEntry} />} />
+              <Route path="/settings" element={<SettingsSection />} />
+              <Route path="*" element={<Navigate to="/journal" replace />} />
+            </Routes>
           </div>
-        )}
+        </main>
       </div>
-    </div>
+    </Router>
   );
 }
 
