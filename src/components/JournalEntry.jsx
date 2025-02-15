@@ -15,12 +15,6 @@ function JournalEntry({ newEntry, setNewEntry, handleAddEntry }) {
           Clear
         </button>
       </div>
-      {/* <button
-        onClick={handleAddEntry}
-        className="w-full max-w-xs mx-auto flex bg-gradient-to-r from-blue-500 to-indigo-500 text-white py-3 px-6 rounded-lg font-medium shadow-md hover:shadow-lg transition-all duration-200 items-center justify-center space-x-2 group mt-20"
-      >
-        <span>Send</span>
-      </button> */}
     </>
   );
 }
