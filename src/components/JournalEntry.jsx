@@ -1,6 +1,6 @@
 import React from "react";
 
-function JournalEntry({ newEntry, setNewEntry, handleAddEntry }) {
+function JournalEntry({ newEntry, setNewEntry }) {
   return (
     <>
       <textarea
@@ -9,6 +9,7 @@ function JournalEntry({ newEntry, setNewEntry, handleAddEntry }) {
         value={newEntry}
         onChange={(e) => setNewEntry(e.target.value)}
       ></textarea>
+
       <div className="flex items-center justify-between text-sm text-gray-500 mt-1">
         <span>{newEntry.length}/300</span>
         <button onClick={() => setNewEntry("")} className="text-blue-500 hover:underline">
