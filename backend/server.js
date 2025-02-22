@@ -9,25 +9,68 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Route to handle AI response submission
-app.post("/api/ai-response", async (req, res) => {
-  const { prompt } = req.body;
+// ✅ Route to add a new journal entry
+app.post("/api/journal-entries", async (req, res) => {
+  const { entry_text } = req.body;
 
-  if (!prompt) {
-    return res.status(400).json({ error: "Prompt is required." });
+  if (!entry_text) {
+    return res.status(400).json({ error: "Entry text is required." });
   }
 
   try {
-    // Save prompt to the database (optional)
     const result = await pool.query(
-      "INSERT INTO journal_entries (prompt) VALUES ($1) RETURNING *",
-      [prompt]
+      "INSERT INTO journal_entries (entry_text) VALUES ($1) RETURNING *",
+      [entry_text]
     );
 
-    // Placeholder AI response
-    const aiResponse = `AI Response to: "${prompt}"`;
+    res.status(201).json({ message: "Entry added successfully", entry: result.rows[0] });
+  } catch (error) {
+    console.error("Database error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
-    res.json({ answer: aiResponse, entry: result.rows[0] });
+// ✅ Route to get all journal entries
+app.get("/api/journal-entries", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM journal_entries ORDER BY created_at DESC");
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Database error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ✅ Route to get a specific journal entry by ID
+app.get("/api/journal-entries/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query("SELECT * FROM journal_entries WHERE id = $1", [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Entry not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Database error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ✅ Route to delete a journal entry by ID
+app.delete("/api/journal-entries/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query("DELETE FROM journal_entries WHERE id = $1 RETURNING *", [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Entry not found" });
+    }
+
+    res.json({ message: "Entry deleted successfully", deletedEntry: result.rows[0] });
   } catch (error) {
     console.error("Database error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -37,5 +80,5 @@ app.post("/api/ai-response", async (req, res) => {
 // Start the server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`✅ Server running on port ${PORT}`);
 });
