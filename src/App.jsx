@@ -70,6 +70,28 @@ function App() {
     }
   }
 
+  async function getPrompt(entryText) {
+    try {
+      const response = await fetch(
+        `http://localhost:5000/api/journals/prompt?entryText=${encodeURIComponent(entryText)}`,
+        {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+      if (!response.ok) {
+        throw new Error("Failed to fetch prompt");
+      }
+      const data = await response.json();
+      // For now, we log the result; you can process it as needed.
+      console.log("Prompt Data:", data);
+      return data;
+    } catch (error) {
+      console.error("Error fetching prompt:", error);
+      return null;
+    }
+  }
+
   return (
     <div className="flex h-screen bg-neutral-50 text-neutral-800 font-sans">
       {/* Sidebar */}
@@ -91,7 +113,7 @@ function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col items-center justify-center p-8 w-full">
+      <main className="flex-1 flex flex-col items-center justify-center w-full">
         <div className="w-full max-w-screen">
           <Routes>
             <Route path="/history" element={<HistorySection entries={entries} />} />
@@ -103,6 +125,7 @@ function App() {
                   setNewEntry={setNewEntry}
                   handleAddEntry={handleAddEntry}
                   aiResponses={aiResponses}
+                  getPrompt={getPrompt}
                 />
               }
             />
