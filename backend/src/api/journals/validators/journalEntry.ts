@@ -15,6 +15,8 @@ const validEmotions = [
       .min(30, "Entry must have at least 30 characters.")
       .max(1000, "Entry must not exceed 1000 characters."), // Added max limit
     emotionLabel: z.array(z.enum(validEmotions)).nonempty("At least one emotion required"), // Ensures it's not empty
-    entryDate: z.date()
+    entryDate: z.preprocess(arg => {
+      return typeof arg === "string" ? new Date(arg) : arg;
+    }, z.date())
   });
 

@@ -6,6 +6,7 @@ import HistorySection from "./components/HistorySection";
 import JournalSection from "./components/JournalSection";
 import SettingsSection from "./components/SettingSection";
 import Journal from "./components/Journal";
+import SignIn from "./components/SignIn";
 import { v4 as uuidv4 } from "uuid";
 
 function App() {
@@ -116,6 +117,7 @@ function App() {
       <main className="flex-1 flex flex-col items-center justify-center w-full">
         <div className="w-full max-w-screen">
           <Routes>
+          <Route path="/signin" element={<SignIn />} />
             <Route path="/history" element={<HistorySection entries={entries} />} />
             <Route
               path="/home"

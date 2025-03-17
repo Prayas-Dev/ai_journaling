@@ -3,7 +3,6 @@ import pool from "../../config/db"
 import { journalEmbeddingSchema } from "./validators/journalEmbeddings";
 import { journalEntrySchema } from './validators/journalEntry';
 import { getPromptSchema} from './validators/getPrompt'
-import { journalDeleteSchema } from './validators/journalEntryDelete'
 import { analyzeEmotions,generateEmbeddings, emotionAnalysisAndGeneratePrompt, generateGeminiPrompt } from '../../utils/geminiHelpers';
 import { z } from "zod";
 
@@ -24,18 +23,19 @@ export const getPrompt: RequestHandler = async (req, res, next): Promise<void> =
   }
 };
 
-export const getJournalEntries: RequestHandler = async (req, res, next) => {
+export const getJournalEntries: RequestHandler = async (req, res) => {
   try {
-    const { query } = req.body;
-    if (!query) {
-      res.status(400).json({ error: "Query is required" });
+    const userId = req.params.userId;
+    const searchQuery = req.query.query;
+
+    // Validate query parameter
+    if (!searchQuery || typeof searchQuery !== 'string') {
+      res.status(400).json({ error: "Valid query parameter is required" });
       return;
     }
 
-    const queryEmbedding = await generateEmbeddings(query);
+    const queryEmbedding = await generateEmbeddings(searchQuery);
     const embeddingString = `[${queryEmbedding.join(",")}]`;
-
-    console.log(embeddingString);
 
     const result = await pool.query(
       `
@@ -45,16 +45,18 @@ export const getJournalEntries: RequestHandler = async (req, res, next) => {
           entry_text, 
           0 AS similarity
         FROM journal_entries
-        WHERE entry_text ILIKE '%' || $1 || '%'
+        WHERE user_id = $1
+          AND entry_text ILIKE '%' || $2 || '%'
         LIMIT 5
       ),
       semantic_search AS (
         SELECT 
           journal_entries.journal_id, 
           journal_entries.entry_text, 
-          journal_embeddings.embedding <=> $2::vector AS similarity
+          journal_embeddings.embedding <=> $3::vector AS similarity
         FROM journal_entries
         JOIN journal_embeddings ON journal_entries.journal_id = journal_embeddings.journal_id
+        WHERE journal_entries.user_id = $1
         ORDER BY similarity ASC
         LIMIT 5
       ),
@@ -72,10 +74,9 @@ export const getJournalEntries: RequestHandler = async (req, res, next) => {
       ORDER BY similarity ASC
       LIMIT 5;
       `,
-      [query, embeddingString]
+      [userId, searchQuery, embeddingString]
     );
-    
-    
+
 
     res.json(result.rows);
   } catch (error) {
@@ -115,16 +116,6 @@ export const createOrUpdateJournalEntry: RequestHandler = async (req, res, next)
     validatedData.entryDate
 ];
 
-      const journalInsertQuery = `
-          INSERT INTO journal_entries (user_id, entry_text, emotion_labels)
-          VALUES ($1, $2, $3)
-          RETURNING journal_id
-      `;
-      const journalInsertParams = [
-          validatedData.userId,
-          validatedData.entryText,
-          validatedData.emotionLabel
-      ];
 
       const journalInsertResult = await client.query(upsertJournalQuery, upsertJournalParams);
       const journalId = journalInsertResult.rows[0].journal_id;
@@ -159,21 +150,30 @@ export const createOrUpdateJournalEntry: RequestHandler = async (req, res, next)
   }
 };
 
-export const deleteJournalEntry: RequestHandler = async (req,res,next) => {
+export const deleteJournalEntry: RequestHandler = async (req, res, next): Promise<void> => {
   const client = await pool.connect();
 
-  try{
+  try {
+    const entryDate = req.params.date;
+    if (!entryDate) {
+      res.status(400).json({ message: "Entry date is required" });
+      return;
+    }
+
+    await client.query('BEGIN');
 
     const deleteJournalEntryQuery = `
     DELETE FROM journal_entries WHERE entry_date = $1 CASCADE;
     `;
-    
-    const validatedData = z.parse
 
-  }catch(error:any){
+    await client.query(deleteJournalEntryQuery, [entryDate]);
+
+    await client.query('COMMIT');
+    res.status(200).json({ message: "Journal entry deleted successfully" });
+  } catch (error: any) {
     await client.query('ROLLBACK');
-  }finally{
-    await client.release();
+    res.status(500).json({ message: "Failed to delete journal entry", error: error.message });
+  } finally {
+    client.release();
   }
-
 };
