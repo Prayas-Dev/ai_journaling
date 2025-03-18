@@ -13,4 +13,6 @@ router.post("/prompt", getPrompt);
 
 router.delete("/:date", deleteJournalEntry);
 
+
+
 export default router;

@@ -1,8 +1,11 @@
+import React from "react";
 
 const SignIn = () => {
   const handleGoogleSignIn = () => {
     window.location.href = 'http://localhost:5000/auth/google';
   };
+
+
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100">

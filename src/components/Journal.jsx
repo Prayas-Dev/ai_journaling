@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+// src/Journal.jsx
+import React, { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 
 function Journal({ hasAnimatedRef }) {
@@ -6,46 +7,78 @@ function Journal({ hasAnimatedRef }) {
   const [newMessage, setNewMessage] = useState("");
   const [aiTyping, setAiTyping] = useState(false);
 
-  // ✅ Fetch AI Response from API
+  // Fetch AI Response from Backend API
   const fetchAIResponse = async (userMessage) => {
     try {
       const response = await fetch("http://localhost:5000/api/journals/prompt", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ entryText: userMessage }),
       });
+
+      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+
       const data = await response.json();
-      const prompt = data.prompt;
-      console.log(prompt);
-      return prompt || "I couldn't process that, try again.";
+      let aiText = data?.prompt ?? "No prompt received.";
+      return aiText.trim();
     } catch (error) {
       console.error("Error fetching AI response:", error);
-      return "Oops! Something went wrong.";
+      return "Oops! Something went wrong. Please try again.";
     }
   };
 
-  // ✅ Handle user message submission
+  // Handle user message submission
   const handleAddEntry = async (message) => {
     if (!message.trim()) return;
 
-    const userEntry = { id: Date.now(), role: "user", content: message };
+    const userEntry = {
+      id: Date.now(),
+      role: "user",
+      content: message,
+    };
     setDisplayedMessages((prev) => [...prev, userEntry]);
     setNewMessage("");
     setAiTyping(true);
 
-    const aiResponse = await fetchAIResponse(message);
-    const cleanResponse = (aiResponse ?? "I couldn't process that, try again.")
-    .replace(/undefined/g, "")
-    .trim();
-  
-  const aiEntry = { id: Date.now() + Math.random(), role: "ai", content: cleanResponse };
-  
+    try {
+      const aiResponse = await fetchAIResponse(message);
+      const aiEntry = {
+        id: Date.now() + Math.random(),
+        role: "ai",
+        content: aiResponse,
+      };
+      setDisplayedMessages((prev) => [...prev, aiEntry]);
+    } catch (error) {
+      console.error("Error handling entry:", error);
+      setDisplayedMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          role: "ai",
+          content: "Oops! Something went wrong. Please try again.",
+        },
+      ]);
+    } finally {
+      setAiTyping(false);
+    }
+  };
 
-      
-    setDisplayedMessages((prev) => [...prev, aiEntry]);
-    setAiTyping(false);
+  // Save the current conversation to the backend
+  const handleSaveJournal = async () => {
+    try {
+      const response = await fetch("http://localhost:5000/api/journals/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ conversation: displayedMessages }),
+      });
+      if (!response.ok) throw new Error("Failed to save journal.");
+      const data = await response.json();
+      console.log("Journal saved successfully:", data);
+    } catch (error) {
+      console.error("Error saving journal:", error);
+    }
   };
 
   return (
@@ -53,7 +86,7 @@ function Journal({ hasAnimatedRef }) {
       <h1 className="text-2xl font-semibold text-center mb-4">Journal Entries</h1>
 
       {displayedMessages.length === 0 ? (
-        <p className="text-gray-500 text-center">No journal entries yet.</p>
+        <p className="text-gray-500 text-center">Start writing</p>
       ) : (
         displayedMessages.map((message) =>
           message.role === "ai" ? (
@@ -75,11 +108,8 @@ function Journal({ hasAnimatedRef }) {
         )
       )}
 
-      {aiTyping && (
-        <p className="text-gray-500 italic text-left">AI is thinking...</p>
-      )}
+      {aiTyping && <p className="text-gray-500 italic text-left">AI is thinking...</p>}
 
-      {/* User Input Section */}
       <div className="mt-6 flex flex-col items-start gap-2 w-full">
         <textarea
           value={newMessage}
@@ -87,51 +117,58 @@ function Journal({ hasAnimatedRef }) {
           className="p-2 w-full resize-none focus:ring-0 outline-none bg-transparent"
           placeholder="Write your thoughts..."
         />
-        <button
-          onClick={() => handleAddEntry(newMessage)}
-          className="bg-gradient-to-r from-black to-gray-500 text-white px-4 py-2 rounded-md hover:opacity-90 transition-all"
-        >
-          Go Deeper
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => handleAddEntry(newMessage)}
+            className="bg-gradient-to-r from-black to-gray-500 text-white px-4 py-2 rounded-md hover:opacity-90 transition-all"
+          >
+            Go Deeper
+          </button>
+          {/* New Save Journal button with the same CSS as Go Deeper */}
+          <button
+            onClick={handleSaveJournal}
+            className="bg-gradient-to-r from-black to-gray-500 text-white px-4 py-2 rounded-md hover:opacity-90 transition-all"
+          >
+            Save Journal
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-// ✅ Typewriter Effect for AI Responses
+// Typewriter Effect Component for AI responses
 function TypingText({ text, messageId, hasAnimatedRef }) {
-  const [displayedText, setDisplayedText] = useState(
-    hasAnimatedRef.current.has(messageId) ? text : ""
-  );
-console.log(`displayedText: ${displayedText}`);
-console.log(`text: ${text}`)
+  const [displayedText, setDisplayedText] = useState("");
+  const animationRef = useRef(null);
 
-useEffect(() => {
-  if (hasAnimatedRef.current.has(messageId)) return;
-
-  let i = 0;
-  const interval = setInterval(() => {
-    if (i < (text.length-1)) {
-      setDisplayedText((prev) => prev + text[i]);
-      console.log(text[i]);
-      i++;
-    } else {
-      clearInterval(interval);
-      hasAnimatedRef.current.add(messageId);
+  useEffect(() => {
+    if (hasAnimatedRef.current.has(messageId)) {
+      setDisplayedText(text);
+      return;
     }
-  }, 30);
 
-  return () => clearInterval(interval);
-}, [text, messageId, hasAnimatedRef]);
+    let currentIndex = 0;
+    const typeCharacter = () => {
+      if (currentIndex < text.length - 1) {
+        setDisplayedText((prev) => prev + text[currentIndex]);
+        currentIndex++;
+        animationRef.current = setTimeout(typeCharacter, 30);
+      } else {
+        hasAnimatedRef.current.add(messageId);
+      }
+    };
 
+    typeCharacter();
+
+    return () => clearTimeout(animationRef.current);
+  }, [text, messageId, hasAnimatedRef]);
 
   return (
     <motion.p
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ duration: 0.3 }}
       className="p-3 rounded-lg text-black text-base"
-      style={{ backgroundColor: "transparent" }}
     >
       {displayedText}
     </motion.p>
