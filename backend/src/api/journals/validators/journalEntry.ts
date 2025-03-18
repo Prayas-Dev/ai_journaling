@@ -10,7 +10,7 @@ const validEmotions = [
   ] as const;
 
   export const journalEntrySchema = z.object({
-    userId: z.string().uuid(), // Ensure it's a valid UUID
+    userId: z.string(), // Ensure it's a valid UUID
     entryText: z.string()
       .min(30, "Entry must have at least 30 characters.")
       .max(1000, "Entry must not exceed 1000 characters."), // Added max limit

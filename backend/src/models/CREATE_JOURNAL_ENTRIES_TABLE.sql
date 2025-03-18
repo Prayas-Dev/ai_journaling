@@ -1,5 +1,6 @@
 CREATE TABLE journal_entries (
     journal_id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id TEXT NOT NULL,
     entry_text TEXT NOT NULL,
     emotion_labels TEXT[] NOT NULL,
     entry_date DATE UNIQUE NOT NULL,

@@ -86,18 +86,22 @@ export const getJournalEntries: RequestHandler = async (req, res) => {
 };
 
 export const createOrUpdateJournalEntry: RequestHandler = async (req, res, next) => {
-  const client = await pool.connect(); 
+  const client = await pool.connect();
   try {
-      await client.query("BEGIN");
-      const emotionsAndPrompt = await emotionAnalysisAndGeneratePrompt(req.body.entryText);
-      const validatedData = journalEntrySchema.parse({
-          userId: req.body.userId,
-          entryText: req.body.entryText,
-          emotionLabel: emotionsAndPrompt.emotions,
-          entryDate: req.body.entry_date
-      });
+    await client.query("BEGIN");
 
-      const upsertJournalQuery = `
+    // Extract required fields from the request body
+    const { userId, entryText, entry_date } = req.body;
+    if (!userId || !entryText || !entry_date) {
+      res.status(400).json({ error: "Missing required fields: userId, entryText, entry_date" });
+      return;
+    }
+
+    // For the prototype, we'll use an empty array for emotion_labels
+    const emotion_labels: string[] = [];
+
+    // Upsert the journal entry
+    const upsertJournalQuery = `
       INSERT INTO journal_entries (user_id, entry_text, emotion_labels, entry_date)
       VALUES ($1, $2, $3, $4)
       ON CONFLICT (entry_date)
@@ -107,48 +111,40 @@ export const createOrUpdateJournalEntry: RequestHandler = async (req, res, next)
           emotion_labels = EXCLUDED.emotion_labels,
           last_modified = NOW()
       RETURNING journal_id;
-  `;
+    `;
+    const upsertJournalParams = [userId, entryText, emotion_labels, entry_date];
+    const journalInsertResult = await client.query(upsertJournalQuery, upsertJournalParams);
+    const journalId = journalInsertResult.rows[0].journal_id;
 
-  const upsertJournalParams = [
-    validatedData.userId,
-    validatedData.entryText,
-    validatedData.emotionLabel,
-    validatedData.entryDate
-];
+    // Generate embeddings for the entry text
+    const vectorEmbeddings = await generateEmbeddings(entryText);
+    const vectorString = `[${vectorEmbeddings.join(',')}]`; // Format as vector string
 
+    const validatedEmbedding = journalEmbeddingSchema.parse({
+      journalId,
+      journalEmbedding: vectorEmbeddings
+    });
 
-      const journalInsertResult = await client.query(upsertJournalQuery, upsertJournalParams);
-      const journalId = journalInsertResult.rows[0].journal_id;
+    // Upsert the embedding into the journal_embeddings table
+    const upsertEmbeddingQuery = `
+      INSERT INTO journal_embeddings (journal_id, embedding)
+      VALUES ($1, $2::vector)
+      ON CONFLICT(journal_id)
+      DO UPDATE SET embedding = EXCLUDED.embedding;
+    `;
+    const embeddingUpsertParams = [journalId, vectorString];
+    await client.query(upsertEmbeddingQuery, embeddingUpsertParams);
 
-      // Generate embeddings and format as vector string
-      const vectorEmbeddings = await generateEmbeddings(validatedData.entryText);
-      const vectorString = `[${vectorEmbeddings.join(',')}]`; // Correct format
-
-      // Validate embeddings data (optional, adjust schema as needed)
-      const validatedEmbedding = journalEmbeddingSchema.parse({
-          journalId,
-          journalEmbedding: vectorEmbeddings // Ensure this is an array of numbers
-      });
-
-      // Insert embeddings with vector cast
-      const upsertEmbeddingQuery = `
-          INSERT INTO journal_embeddings (journal_id, embedding)
-          VALUES ($1, $2::vector)
-          ON CONFLICT(journal_id)
-          DO UPDATE SET embedding = EXCLUDED.embedding;
-      `;
-      const embeddingUpsertParams = [journalId, vectorString];
-      await client.query(upsertEmbeddingQuery, embeddingUpsertParams);
-
-      await client.query('COMMIT');
-      res.status(200).json({ message: "Success", journalId });
+    await client.query("COMMIT");
+    res.status(200).json({ message: "Success", journalId });
   } catch (error: any) {
-      await client.query('ROLLBACK');
-      res.status(500).json({ error: error.errors || error.message });
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: error.errors || error.message });
   } finally {
-      client.release();
+    client.release();
   }
 };
+
 
 export const deleteJournalEntry: RequestHandler = async (req, res, next): Promise<void> => {
   const client = await pool.connect();

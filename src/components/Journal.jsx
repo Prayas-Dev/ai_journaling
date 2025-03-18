@@ -15,9 +15,8 @@ function Journal({ hasAnimatedRef }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ entryText: userMessage }),
       });
-
-      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-
+      if (!response.ok)
+        throw new Error(`HTTP error! Status: ${response.status}`);
       const data = await response.json();
       let aiText = data?.prompt ?? "No prompt received.";
       return aiText.trim();
@@ -27,7 +26,7 @@ function Journal({ hasAnimatedRef }) {
     }
   };
 
-  // Handle user message submission
+  // Handle user message submission: adds the user message and then fetches an AI response.
   const handleAddEntry = async (message) => {
     if (!message.trim()) return;
 
@@ -63,28 +62,58 @@ function Journal({ hasAnimatedRef }) {
     }
   };
 
-  // Save the current conversation to the backend
+  // Save the entire conversation to the backend using the createOrUpdateJournalEntry endpoint.
   const handleSaveJournal = async () => {
     try {
-      const response = await fetch("http://localhost:5000/api/journals/save", {
+      // Retrieve user data from localStorage
+      const storedUser = localStorage.getItem("userData");
+      const userData = storedUser && JSON.parse(storedUser);
+      // Use either sub or id from the token payload
+      const userId = userData?.sub || userData?.id;
+      if (!userId) {
+        throw new Error("User is not signed in.");
+      }
+  
+      // Combine all messages into one string with labels: "User:" for user messages and "Prompt:" for AI responses.
+      const conversationText = displayedMessages
+        .map((msg) => {
+          const label = msg.role === "user" ? "User:" : "Prompt:";
+          return `${label} ${msg.content}`;
+        })
+        .join("\n");
+  
+      // Use only the date portion (YYYY-MM-DD) for entry_date, because your table column is a DATE.
+      const entryDate = new Date().toISOString().split("T")[0];
+  
+      // Construct payload for createOrUpdateJournalEntry
+      const payload = {
+        userId: userId,
+        entryText: conversationText,
+        entry_date: entryDate,
+      };
+
+      console.log(payload);
+  
+      // POST the payload to the backend endpoint
+      const response = await fetch("http://localhost:5000/api/journals/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ conversation: displayedMessages }),
+        body: JSON.stringify(payload),
       });
-      if (!response.ok) throw new Error("Failed to save journal.");
+      if (!response.ok) throw new Error("Failed to save journal entry.");
       const data = await response.json();
       console.log("Journal saved successfully:", data);
     } catch (error) {
-      console.error("Error saving journal:", error);
+      console.error("Error saving journal entry:", error);
     }
   };
+  
 
   return (
     <div className="space-y-4 p-6 min-h-screen bg-white">
       <h1 className="text-2xl font-semibold text-center mb-4">Journal Entries</h1>
-
       {displayedMessages.length === 0 ? (
         <p className="text-gray-500 text-center">Start writing</p>
       ) : (
@@ -107,9 +136,9 @@ function Journal({ hasAnimatedRef }) {
           )
         )
       )}
-
-      {aiTyping && <p className="text-gray-500 italic text-left">AI is thinking...</p>}
-
+      {aiTyping && (
+        <p className="text-gray-500 italic text-left">AI is thinking...</p>
+      )}
       <div className="mt-6 flex flex-col items-start gap-2 w-full">
         <textarea
           value={newMessage}
@@ -124,7 +153,6 @@ function Journal({ hasAnimatedRef }) {
           >
             Go Deeper
           </button>
-          {/* New Save Journal button with the same CSS as Go Deeper */}
           <button
             onClick={handleSaveJournal}
             className="bg-gradient-to-r from-black to-gray-500 text-white px-4 py-2 rounded-md hover:opacity-90 transition-all"
@@ -147,7 +175,6 @@ function TypingText({ text, messageId, hasAnimatedRef }) {
       setDisplayedText(text);
       return;
     }
-
     let currentIndex = 0;
     const typeCharacter = () => {
       if (currentIndex < text.length - 1) {
@@ -158,9 +185,7 @@ function TypingText({ text, messageId, hasAnimatedRef }) {
         hasAnimatedRef.current.add(messageId);
       }
     };
-
     typeCharacter();
-
     return () => clearTimeout(animationRef.current);
   }, [text, messageId, hasAnimatedRef]);
 
