@@ -18,6 +18,7 @@ function Journal({ hasAnimatedRef }) {
       if (!response.ok)
         throw new Error(`HTTP error! Status: ${response.status}`);
       const data = await response.json();
+      console.log(data);
       let aiText = data?.prompt ?? "No prompt received.";
       return aiText.trim();
     } catch (error) {
@@ -82,13 +83,19 @@ function Journal({ hasAnimatedRef }) {
         })
         .join("\n");
   
+
+        const finalText = newMessage.trim();
+
+        const fullConversationText = finalText
+        ? `${conversationText}\nUser: ${finalText}`
+        : conversationText;
       // Use only the date portion (YYYY-MM-DD) for entry_date, because your table column is a DATE.
       const entryDate = new Date().toISOString().split("T")[0];
   
       // Construct payload for createOrUpdateJournalEntry
       const payload = {
         userId: userId,
-        entryText: conversationText,
+        entryText: fullConversationText,
         entry_date: entryDate,
       };
 

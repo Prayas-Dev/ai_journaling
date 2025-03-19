@@ -3,7 +3,7 @@ POST http://localhost:5000/api/journals/
 Content-Type: application/json
 
 {
-  "entryText": "User: hello helloadfsdf\nPrompt: What feelings, if any, are hidden beneath the seemingly random words 'hello helloadfsdf'?",
-  "entry_date": "2025-03-18",
+"entryText": "User: lnlk\nPrompt: If you could replace 'lnlk' with a feeling, what would it be?\nUser: lnl"  ,
+"entry_date": "2025-03-18",
   "userId": "115554072083806975013"
 }

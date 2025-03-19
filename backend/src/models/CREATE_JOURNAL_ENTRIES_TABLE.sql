@@ -1,9 +1,8 @@
 CREATE TABLE journal_entries (
-    journal_id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id TEXT NOT NULL,
+    journal_id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL,
     entry_text TEXT NOT NULL,
-    emotion_labels TEXT[] NOT NULL,
-    entry_date DATE UNIQUE NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-    last_modified TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    emotion_labels TEXT[] DEFAULT '{}',
+    entry_date TIMESTAMP DEFAULT NOW(),
+    last_modified TIMESTAMP DEFAULT NOW()
 );
