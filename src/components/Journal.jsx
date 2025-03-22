@@ -10,7 +10,7 @@ function Journal({ hasAnimatedRef }) {
   const fetchAIResponse = async (userMessage) => {
     try {
       const response = await fetch(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=AIzaSyC1NePYmTSlJgNtsQUrfmuZKaEXcoiS_34",
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyC1NePYmTSlJgNtsQUrfmuZKaEXcoiS_34",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -19,23 +19,24 @@ function Journal({ hasAnimatedRef }) {
           }),
         }
       );
-
+  
       if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-      
+  
       const data = await response.json();
-      const aiText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-      // Validate and clean response
-      if (!aiText || typeof aiText !== "string") {
-        return "I couldn't process that. Please try again.";
-      }
-      return aiText.replace(/\bundefined\b/gi, '');
-
+      let aiText = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  
+      // Ensure aiText is a string and trim any unwanted characters
+      if (typeof aiText !== "string") aiText = "I couldn't process that. Please try again.";
+  
+      // Remove "undefined" explicitly and trim whitespace
+      return aiText.replace(/\bundefined\b/gi, "").trim();
+  
     } catch (error) {
       console.error("Error fetching AI response:", error);
       return "Oops! Something went wrong. Please try again.";
     }
   };
+  
 
   // Handle user message submission
   const handleAddEntry = async (message) => {
@@ -125,31 +126,31 @@ function Journal({ hasAnimatedRef }) {
 
 // Typewriter Effect Component
 function TypingText({ text, messageId, hasAnimatedRef }) {
-  const [displayedText, setDisplayedText] = useState(
-    hasAnimatedRef.current.has(messageId) ? text : ""
-  );
-  const textRef = useRef(text);
-  const indexRef = useRef(0);
+  const [displayedText, setDisplayedText] = useState("");
+  const animationRef = useRef(null);
 
   useEffect(() => {
-    textRef.current = text;
-    if (hasAnimatedRef.current.has(messageId)) return;
+    // If we've already animated this message, show full text immediately.
+    if (hasAnimatedRef.current.has(messageId)) {
+      setDisplayedText(text);
+      return;
+    }
 
-    indexRef.current = 0;
-    setDisplayedText("");
+    let currentIndex = 0;
 
-    const animate = () => {
-      if (indexRef.current < textRef.current.length) {
-        setDisplayedText(prev => prev + textRef.current.charAt(indexRef.current));
-        indexRef.current++;
-        requestAnimationFrame(animate);
+    const typeCharacter = () => {
+      if (currentIndex < text.length - 1) {
+        setDisplayedText((prev) => prev + text[currentIndex]);
+        currentIndex++;
+        animationRef.current = setTimeout(typeCharacter, 30);
       } else {
         hasAnimatedRef.current.add(messageId);
       }
     };
 
-    const animationId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animationId);
+    typeCharacter();
+
+    return () => clearTimeout(animationRef.current);
   }, [text, messageId, hasAnimatedRef]);
 
   return (
