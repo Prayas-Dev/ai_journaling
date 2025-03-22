@@ -1,4 +1,4 @@
-// src/Journal.jsx
+
 import React, { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 
@@ -35,6 +35,7 @@ function Journal({ hasAnimatedRef }) {
       id: Date.now(),
       role: "user",
       content: message,
+
     };
     setDisplayedMessages((prev) => [...prev, userEntry]);
     setNewMessage("");
@@ -58,6 +59,7 @@ function Journal({ hasAnimatedRef }) {
           content: "Oops! Something went wrong. Please try again.",
         },
       ]);
+
     } finally {
       setAiTyping(false);
     }
@@ -143,9 +145,9 @@ function Journal({ hasAnimatedRef }) {
           )
         )
       )}
-      {aiTyping && (
-        <p className="text-gray-500 italic text-left">AI is thinking...</p>
-      )}
+
+      {aiTyping && <p className="text-gray-500 italic text-left">AI is thinking...</p>}
+
       <div className="mt-6 flex flex-col items-start gap-2 w-full">
         <textarea
           value={newMessage}
@@ -172,6 +174,7 @@ function Journal({ hasAnimatedRef }) {
   );
 }
 
+
 // Typewriter Effect Component for AI responses
 function TypingText({ text, messageId, hasAnimatedRef }) {
   const [displayedText, setDisplayedText] = useState("");
@@ -188,12 +191,14 @@ function TypingText({ text, messageId, hasAnimatedRef }) {
         setDisplayedText((prev) => prev + text[currentIndex]);
         currentIndex++;
         animationRef.current = setTimeout(typeCharacter, 30);
+
       } else {
         hasAnimatedRef.current.add(messageId);
       }
     };
     typeCharacter();
     return () => clearTimeout(animationRef.current);
+
   }, [text, messageId, hasAnimatedRef]);
 
   return (
