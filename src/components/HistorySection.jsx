@@ -25,7 +25,7 @@ function HistorySection() {
       setLoading(true);
       setError(null);
       try {
-        let url = `http://localhost:5000/api/journals/all/${userId}`; // Updated route for fetching all
+        let url = `http://localhost:5000/api/jounals/all/${userId}`; // Updated route for fetching all
         if (query.trim() !== '') {
           url = `http://localhost:5000/api/journals/search/${userId}?query=${encodeURIComponent(query)}`;
         }
