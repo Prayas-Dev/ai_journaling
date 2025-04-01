@@ -103,43 +103,46 @@ export const searchJournalEntries: RequestHandler = async (req, res) => {
 
     const result = await pool.query(
       `
-      WITH keyword_search AS (
-        SELECT 
-          journal_id, 
-          entry_text,
-          entry_date,
-          0 AS similarity
-        FROM journal_entries
-        WHERE user_id = $1
-          AND entry_text ILIKE '%' || $2 || '%'
-        LIMIT 5
-      ),
-      semantic_search AS (
-        SELECT 
-          journal_entries.journal_id, 
-          journal_entries.entry_text,
-          journal_entries.entry_date,
-          journal_embeddings.embedding <=> $3::vector AS similarity
-        FROM journal_entries
-        JOIN journal_embeddings ON journal_entries.journal_id = journal_embeddings.journal_id
-        WHERE journal_entries.user_id = $1
-        ORDER BY similarity ASC
-        LIMIT 5
-      ),
-      combined AS (
-        SELECT * FROM keyword_search
-        UNION ALL
-        SELECT * FROM semantic_search
-      )
-      SELECT 
-        journal_id, 
-        entry_text,
-        entry_date,
-        MIN(similarity) AS similarity
-      FROM combined
-      GROUP BY journal_id, entry_text, entry_date
-      ORDER BY similarity ASC
-      LIMIT 5;
+WITH keyword_search AS (
+  SELECT
+    journal_id,
+    entry_text,
+    entry_date,
+    image_path,
+    0 AS similarity
+  FROM journal_entries
+  WHERE user_id = $1
+    AND entry_text ILIKE '%' || $2 || '%'
+  LIMIT 5
+),
+semantic_search AS (
+  SELECT
+    journal_entries.journal_id,
+    journal_entries.entry_text,
+    journal_entries.entry_date,
+    journal_entries.image_path,
+    journal_embeddings.embedding <=> $3::vector AS similarity
+  FROM journal_entries
+  JOIN journal_embeddings ON journal_entries.journal_id = journal_embeddings.journal_id
+  WHERE journal_entries.user_id = $1
+  ORDER BY similarity ASC
+  LIMIT 5
+),
+combined AS (
+  SELECT * FROM keyword_search
+  UNION ALL
+  SELECT * FROM semantic_search
+)
+SELECT
+  journal_id,
+  entry_text,
+  entry_date,
+  image_path,
+  MIN(similarity) AS similarity
+FROM combined
+GROUP BY journal_id, entry_text, entry_date, image_path
+ORDER BY similarity ASC
+LIMIT 5;
       `,
       [userId, searchQuery, embeddingString]
     );
