@@ -4,8 +4,10 @@ import { journalEmbeddingSchema } from "./validators/journalEmbeddings";
 import { journalEntrySchema } from './validators/journalEntry';
 import { getPromptSchema } from './validators/getPrompt';
 import { journalChatSchema } from './validators/journalChat';
-import { getGeminiResponse,analyzeEmotions, generateEmbeddings, emotionAnalysisAndGeneratePrompt, generateGeminiPrompt } from '../../utils/geminiHelpers';
+import { generateImageFromJournalEntry,getGeminiResponse,analyzeEmotions, generateEmbeddings, emotionAnalysisAndGeneratePrompt, generateGeminiPrompt } from '../../utils/geminiHelpers';
 import { z } from "zod";
+import fs from 'fs/promises';
+import path from 'path';
 
 export const createJournalChat: RequestHandler = async (
   req: Request,
@@ -151,6 +153,8 @@ export const searchJournalEntries: RequestHandler = async (req, res) => {
 const splitIntoSentences = (text: string): string[] => {
   return text.split(/(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|!)\s+(?=[A-Z])/);
 };
+
+
 export const createOrUpdateJournalEntry: RequestHandler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const client = await pool.connect();
   try {
@@ -158,6 +162,9 @@ export const createOrUpdateJournalEntry: RequestHandler = async (req: Request, r
 
     const { userId, entryText, journalId } = req.body;
     const entryDate = new Date().toISOString();
+    let createdAtTimestamp: number;
+    let existingJournalId: number | null = null;
+    let isNewEntry = false;
 
     if (!userId || !entryText) {
       res.status(400).json({ error: "Missing required fields: userId and entryText" });
@@ -165,30 +172,43 @@ export const createOrUpdateJournalEntry: RequestHandler = async (req: Request, r
     }
 
     const emotion_labels: string[] = [];
-    let existingJournalId: number | null = null;
 
     if (journalId) {
       existingJournalId = parseInt(journalId, 10);
-      await client.query(`DELETE FROM journal_entry_chunks WHERE journal_id = $1`, [existingJournalId]);
-      const updateJournalQuery = `
-        UPDATE journal_entries
-        SET entry_text = $1, last_modified = NOW()
-        WHERE journal_id = $2 AND user_id = $3;
-      `;
-      const updateResult = await client.query(updateJournalQuery, [entryText.trim(), existingJournalId, userId]);
-      if (updateResult.rowCount === 0) {
+      const existingJournalResult = await client.query(
+        `SELECT entry_date FROM journal_entries WHERE journal_id = $1 AND user_id = $2`,
+        [existingJournalId, userId]
+      );
+      if (existingJournalResult.rows.length > 0) {
+        createdAtTimestamp = new Date(existingJournalResult.rows[0].entry_date).getTime();
+        await client.query(`DELETE FROM journal_entry_chunks WHERE journal_id = $1`, [existingJournalId]);
+        const updateJournalQuery = `
+          UPDATE journal_entries
+          SET entry_text = $1, last_modified = NOW(), image_path = NULL -- Reset image path on update
+          WHERE journal_id = $2 AND user_id = $3
+          RETURNING entry_date;
+        `;
+        const updateResult = await client.query(updateJournalQuery, [entryText.trim(), existingJournalId, userId]);
+        if (updateResult.rowCount === 0) {
+          await client.query("ROLLBACK");
+          res.status(404).json({ error: "Journal entry not found or does not belong to the user." });
+          return;
+        }
+      } else {
         await client.query("ROLLBACK");
-        res.status(404).json({ error: "Journal entry not found or does not belong to the user." });
+        res.status(404).json({ error: "Journal entry not found." });
         return;
       }
     } else {
+      isNewEntry = true;
       const insertJournalQuery = `
         INSERT INTO journal_entries (user_id, entry_text, emotion_labels, entry_date)
         VALUES ($1, $2, $3, $4)
-        RETURNING journal_id;
+        RETURNING journal_id, entry_date;
       `;
       const journalInsertResult = await client.query(insertJournalQuery, [userId, entryText.trim(), emotion_labels, entryDate]);
       existingJournalId = journalInsertResult.rows[0].journal_id;
+      createdAtTimestamp = new Date(journalInsertResult.rows[0].entry_date).getTime();
     }
 
     if (existingJournalId !== null) {
@@ -210,6 +230,18 @@ export const createOrUpdateJournalEntry: RequestHandler = async (req: Request, r
             // For now, we'll log the error and continue.
           }
         }
+      }
+
+      // Generate and store the image
+      const imagePath = await generateImageFromJournalEntry(entryText, existingJournalId.toString()); // Pass journalId
+
+      if (imagePath) {
+        const updateImagePathQuery = `
+          UPDATE journal_entries
+          SET image_path = $1
+          WHERE journal_id = $2;
+        `;
+        await client.query(updateImagePathQuery, [imagePath, existingJournalId]);
       }
     }
 

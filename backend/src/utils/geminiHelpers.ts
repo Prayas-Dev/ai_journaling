@@ -1,6 +1,9 @@
 import dotenv from "dotenv";
 const envResult = dotenv.config({ path: "../config/.env" });
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
+import { mkdir, writeFile } from 'node:fs/promises';
+import * as path from 'path';
 
 if (!process.env.GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY is not defined in the environment variables.");
@@ -241,3 +244,87 @@ ${entryText}
     return "Could not generate a prompt due to an error.";
   }
 };
+
+const newGenAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }); // Initialize the new client
+
+export const generateImageFromJournalEntry = async (entryText: string, journalId?: string): Promise<string | null> => {
+  try {
+    // Step 1: Generate a concise image prompt from the journal entry
+    const imagePromptResult =`
+Create a vivid and imaginative image prompt based on the following journal entry: "${entryText}". Focus on the core feelings and imagery described. Be specific with details about the scene, objects, and atmosphere you envision. **Render this in a fantastical style that remains grounded in a sense of reality, where the extraordinary feels subtly integrated into the ordinary world.**
+
+**Think about how fantastical elements might appear within a realistic setting.** Instead of a completely different world, imagine our world with a touch of the unbelievable.
+
+**Consider incorporating:**
+
+* **Subtle fantastical elements:** Perhaps everyday objects have unusual properties, or there are hints of magic in the environment that aren't overtly pronounced.
+* **Unexplained phenomena:** Things that seem impossible but are presented as a natural part of the scene.
+* **Characters with unique or slightly enhanced abilities that still feel human.**
+* **Landscapes that are familiar but with a fantastical twist:** A forest that glows faintly at night, a city with buildings that defy gravity in subtle ways, etc.
+* **A dreamlike or surreal quality that still feels connected to the real world.**
+
+**The key is to create a sense of wonder and the fantastical without completely abandoning the familiar.** The magic or extraordinary elements should feel like they could plausibly exist within the reality of the scene, adding a layer of enchantment or mystery without becoming pure fantasy.
+
+**Focus on the emotional impact of this blended reality.** How do the fantastical elements enhance the feelings or themes of your journal entry within a recognizable world?
+`
+    // Step 2: Generate the image using the new library
+    const Promptresponse = await newGenAI.models.generateContent({
+      model: "gemini-2.0-flash-exp-image-generation",
+      contents: imagePromptResult,
+      config: {
+        responseModalities: ["Text"], // Request both image and text just in case
+      },
+    });
+
+    let imagePrompt;
+
+    if (Promptresponse.candidates && Promptresponse.candidates.length > 0 && Promptresponse.candidates[0].content && Promptresponse.candidates[0].content.parts) {
+      for (const part of Promptresponse.candidates[0].content.parts) {
+        // Based on the part type, either log text or save the image
+        if (part.text) {
+        imagePrompt = part.text;
+        }
+      }
+    }
+
+    console.log(imagePrompt);
+
+    const response = await newGenAI.models.generateContent({
+      model: "gemini-2.0-flash-exp-image-generation",
+      contents: imagePrompt || "",
+      config: {
+        responseModalities: [ "Text","Image"] // Request both image and text just in case
+      },
+    });
+
+    if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts) {
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData?.data) {
+          const base64ImageData = part.inlineData.data;
+          // console.log(base64ImageData);
+          if (base64ImageData) {
+            const imageName = journalId ? `${journalId}.png` : `temp_image_${Date.now()}.png`; // Use journalId if available, otherwise a temporary name
+            const imagesFolderPath = path.join(__dirname, '../../../images'); // Assuming 'images' folder is at the root
+            await mkdir(imagesFolderPath, { recursive: true }); // Use the explicitly imported mkdir
+            const imagePathOnServer = path.join(imagesFolderPath, imageName);
+            const buffer = Buffer.from(base64ImageData, 'base64');
+            await writeFile(imagePathOnServer, buffer); // Use the explicitly imported writeFile
+
+            const relativeImagePath = `/images/${imageName}`;
+            console.log("Image saved to:", imagePathOnServer);
+            return relativeImagePath; // Return the relative path to the saved image
+          }
+        }
+      }
+    }
+
+    console.warn("No image data found in the response");
+    return null;
+
+  } catch (error) {
+    console.error("Error in generateImageFromJournalEntry:", error);
+    return null;
+  }
+};
+
+

@@ -27,5 +27,7 @@ router.delete("/:date", deleteJournalEntry);
     // Express will typically set the Content-Type to text/html for this.
     res.send("This is the simple string response from the server.");
   });
+
+  
   
 export default router;

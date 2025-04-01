@@ -4,5 +4,6 @@ CREATE TABLE journal_entries (
     entry_text TEXT NOT NULL,
     emotion_labels TEXT[] DEFAULT '{}',
     entry_date TIMESTAMP DEFAULT NOW(),
-    last_modified TIMESTAMP DEFAULT NOW()
+    last_modified TIMESTAMP DEFAULT NOW(),
+    image_path VARCHAR(255)
 );

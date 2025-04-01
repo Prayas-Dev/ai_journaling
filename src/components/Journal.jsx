@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 import { toast, ToastContainer } from 'react-toastify';
 
 
+
 function Journal(props) {
   console.log("Journal component props:", props);
   const { hasAnimatedRef, initialJournalId } = props;
