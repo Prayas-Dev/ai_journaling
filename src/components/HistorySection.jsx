@@ -34,6 +34,7 @@ function HistorySection() {
           throw new Error("Failed to fetch journal entries");
         }
         const data = await response.json();
+        console.log(data);
         setEntries(data);
       } catch (err) {
         setError(err.message || "Error fetching entries");
@@ -56,7 +57,7 @@ function HistorySection() {
     }
 
     try {
-      const response = await fetch(`http://localhost:5000/api/journals/${journalId}`, {
+      const response = await fetch(`http://localhost:5000/api/journals/${journalId}/${userId}`, {
         method: 'DELETE',
       });
 

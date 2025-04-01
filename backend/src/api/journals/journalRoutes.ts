@@ -1,5 +1,5 @@
 import express from "express";
-import { getJournalEntryById,createJournalChat, createOrUpdateJournalEntry, getPrompt, deleteJournalEntry, getAllJournalEntries, searchJournalEntries } from "./journalController";
+import { deleteJournalEntryByIdAndUserId,getJournalEntryById,createJournalChat, createOrUpdateJournalEntry, getPrompt, deleteJournalEntry, getAllJournalEntries, searchJournalEntries } from "./journalController";
 
 const router = express.Router();
 
@@ -28,6 +28,8 @@ router.delete("/:date", deleteJournalEntry);
     res.send("This is the simple string response from the server.");
   });
 
+
+router.delete("/:journalId/:userid", deleteJournalEntryByIdAndUserId);
   
   
 export default router;

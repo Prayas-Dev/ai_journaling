@@ -258,6 +258,76 @@ export const createOrUpdateJournalEntry: RequestHandler = async (req: Request, r
   }
 };
 
+export const deleteJournalEntryByIdAndUserId: RequestHandler = async (req: Request, res: Response): Promise<void> => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const { journalId, userid } = req.params; // Get both journalId and userid from URL parameters
+
+    if (!userid) {
+      res.status(401).json({ error: "Unauthorized: User ID not provided in the URL." });
+      return;
+    }
+
+    if (!journalId) {
+      res.status(400).json({ error: "Missing required parameter: journalId in the URL." });
+      return;
+    }
+
+    const parsedJournalId = parseInt(journalId, 10);
+    if (isNaN(parsedJournalId)) {
+      res.status(400).json({ error: "Invalid journalId format." });
+      return;
+    }
+
+    // Verify if the provided userid in the URL matches the user making the request
+    // You might still want to compare this with the authenticated user's ID from a token or session
+    const userIdFromUrl = userid; // Assuming userid in the URL is the user's ID
+
+    // Verify if the journal entry belongs to the user
+    const checkOwnershipQuery = `
+      SELECT journal_id
+      FROM journal_entries
+      WHERE journal_id = $1 AND user_id = $2;
+    `;
+    const ownershipResult = await client.query(checkOwnershipQuery, [parsedJournalId, userIdFromUrl]);
+
+    if (ownershipResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      res.status(404).json({ error: "Journal entry not found or does not belong to the user." });
+      return;
+    }
+
+    // Delete related embeddings and chunks first
+    await client.query(`DELETE FROM journal_embeddings WHERE journal_id = $1`, [parsedJournalId]);
+    await client.query(`DELETE FROM journal_entry_chunks WHERE journal_id = $1`, [parsedJournalId]);
+
+    // Finally, delete the journal entry
+    const deleteJournalQuery = `
+      DELETE FROM journal_entries
+      WHERE journal_id = $1 AND user_id = $2;
+    `;
+    const deleteResult = await client.query(deleteJournalQuery, [parsedJournalId, userIdFromUrl]);
+
+    if (deleteResult.rowCount > 0) {
+      await client.query("COMMIT");
+      res.status(200).json({ message: "Journal entry deleted successfully." });
+    } else {
+      await client.query("ROLLBACK");
+      res.status(404).json({ error: "Journal entry not found or could not be deleted." });
+    }
+
+  } catch (error: any) {
+    await client.query("ROLLBACK");
+    console.error("Error deleting journal entry:", error);
+    res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
+  }
+};
+
+
 
 export const deleteJournalEntry: RequestHandler = async (req, res, next): Promise<void> => {
   const client = await pool.connect();
