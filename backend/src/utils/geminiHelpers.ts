@@ -8,6 +8,8 @@ if (!process.env.GEMINI_API_KEY) {
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+
+
 export const getGeminiResponse = async (entry_text: string, mode: string, chatHistory: string): Promise<string> => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;

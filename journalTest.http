@@ -1,0 +1,2 @@
+GET http://localhost:5000/api/journals/all/115554072083806975013
+Accept: application/json

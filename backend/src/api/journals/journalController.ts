@@ -148,54 +148,73 @@ export const searchJournalEntries: RequestHandler = async (req, res) => {
   }
 };
 
-// Fixed and consolidated controller functions
-export const createOrUpdateJournalEntry: RequestHandler = async (req, res, next) => {
+const splitIntoSentences = (text: string): string[] => {
+  return text.split(/(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|!)\s+(?=[A-Z])/);
+};
+export const createOrUpdateJournalEntry: RequestHandler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // Extract required fields from the request body
-    const { userId, entryText } = req.body;
-    // Use full ISO timestamp (including time) so that each entry is unique even on the same day.
+    const { userId, entryText, journalId } = req.body;
     const entryDate = new Date().toISOString();
-    console.log(entryDate);    
-    if (!userId || !entryText || !entryDate) {
-      res.status(400).json({ error: "Missing required fields: userId, entryText, entry_date" });
+
+    if (!userId || !entryText) {
+      res.status(400).json({ error: "Missing required fields: userId and entryText" });
       return;
     }
-    console.log("Entry Text:", entryText);
-    
-    // For the prototype, we'll use an empty array for emotion_labels
+
     const emotion_labels: string[] = [];
+    let existingJournalId: number | null = null;
 
-    // Use a plain INSERT to allow multiple entries on the same day
-    const insertJournalQuery = `
-      INSERT INTO journal_entries (user_id, entry_text, emotion_labels, entry_date)
-      VALUES ($1, $2, $3, $4)
-      RETURNING journal_id;
-    `;
-    const insertJournalParams = [userId, entryText.trim(), emotion_labels, entryDate];
-    const journalInsertResult = await client.query(insertJournalQuery, insertJournalParams);
-    const journalId = journalInsertResult.rows[0].journal_id;
-    console.log("Insert Parameters:", insertJournalParams);
+    if (journalId) {
+      existingJournalId = parseInt(journalId, 10);
+      await client.query(`DELETE FROM journal_entry_chunks WHERE journal_id = $1`, [existingJournalId]);
+      const updateJournalQuery = `
+        UPDATE journal_entries
+        SET entry_text = $1, last_modified = NOW()
+        WHERE journal_id = $2 AND user_id = $3;
+      `;
+      const updateResult = await client.query(updateJournalQuery, [entryText.trim(), existingJournalId, userId]);
+      if (updateResult.rowCount === 0) {
+        await client.query("ROLLBACK");
+        res.status(404).json({ error: "Journal entry not found or does not belong to the user." });
+        return;
+      }
+    } else {
+      const insertJournalQuery = `
+        INSERT INTO journal_entries (user_id, entry_text, emotion_labels, entry_date)
+        VALUES ($1, $2, $3, $4)
+        RETURNING journal_id;
+      `;
+      const journalInsertResult = await client.query(insertJournalQuery, [userId, entryText.trim(), emotion_labels, entryDate]);
+      existingJournalId = journalInsertResult.rows[0].journal_id;
+    }
 
-    // Generate embeddings for the entry text
-    const vectorEmbeddings = await generateEmbeddings(entryText);
-    // Convert the embedding array into a format accepted by the vector column.
-    // (If your PostgreSQL driver accepts arrays for the vector type, you might be able to pass vectorEmbeddings directly.)
-    const vectorString = `[${vectorEmbeddings.join(',')}]`;
-
-    // Upsert the embedding into the journal_embeddings table using journal_id as the unique key.
-    const upsertEmbeddingQuery = `
-      INSERT INTO journal_embeddings (journal_id, embedding)
-      VALUES ($1, $2::vector)
-      ON CONFLICT(journal_id)
-      DO UPDATE SET embedding = EXCLUDED.embedding;
-    `;
-    await client.query(upsertEmbeddingQuery, [journalId, vectorString]);
+    if (existingJournalId !== null) {
+      const sentences = splitIntoSentences(entryText);
+      for (let i = 0; i < sentences.length; i++) {
+        const sentence = sentences[i].trim();
+        if (sentence) {
+          try {
+            const vectorEmbeddings = await generateEmbeddings(sentence);
+            const vectorString = `[${vectorEmbeddings.join(',')}]`;
+            const insertChunkQuery = `
+              INSERT INTO journal_entry_chunks (journal_id, chunk_index, chunk_text, embedding)
+              VALUES ($1, $2, $3, $4::vector);
+            `;
+            await client.query(insertChunkQuery, [existingJournalId, i, sentence, vectorString]);
+          } catch (embeddingError) {
+            console.error("Error generating embedding for chunk:", sentence, embeddingError);
+            // Decide how to handle embedding errors: skip the chunk, rollback, etc.
+            // For now, we'll log the error and continue.
+          }
+        }
+      }
+    }
 
     await client.query("COMMIT");
-    res.status(200).json({ message: "Success", journalId });
+    res.status(200).json({ message: "Success", journalId: existingJournalId });
   } catch (error: any) {
     await client.query("ROLLBACK");
     res.status(500).json({ error: error.message });
@@ -227,3 +246,35 @@ export const deleteJournalEntry: RequestHandler = async (req, res, next): Promis
     client.release();
   }
 };
+
+export const getJournalEntryById: RequestHandler = async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const journalId = req.params.journalId;
+
+    if (!userId || !journalId) {
+      res.status(400).json({ error: "User ID and Journal ID are required" });
+      return;
+    }
+
+    const result = await pool.query(
+      `
+      SELECT journal_id, entry_text, entry_date
+      FROM journal_entries
+      WHERE user_id = $1 AND journal_id = $2;
+      `,
+      [userId, journalId]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: "Journal entry not found" });
+      return;
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error fetching journal entry by ID:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+

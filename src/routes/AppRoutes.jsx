@@ -1,11 +1,25 @@
 import React from "react";
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useParams } from "react-router-dom";
 import History from "../pages/History";
 import Home from "../pages/Home";
 import Journal from "../pages/Journal";
 import Settings from "../pages/Settings";
 import SignIn from "../pages/SignIn";
 import LandingPage from "../components/LandingPage";
+
+// JournalWrapper extracts the journalId from the URL and passes it to Journal.
+const JournalWrapper = (props) => {
+  const { journalId } = useParams();
+  console.log("JournalWrapper props:", props, "journalId:", journalId);
+  return (
+    <Journal
+      userData={props.userData}
+      aiResponses={props.aiResponses}
+      hasAnimatedRef={props.hasAnimatedRef}
+      initialJournalId={journalId}
+    />
+  );
+};
 
 const AppRoutes = ({
   userData,
@@ -15,7 +29,7 @@ const AppRoutes = ({
   aiResponses,
   getPrompt,
   hasAnimatedRef,
-  handleLogout, // ADDED: Logout handler
+  handleLogout,
 }) => {
   const location = useLocation();
 
@@ -60,18 +74,41 @@ const AppRoutes = ({
           )
         }
       />
+      {/* For editing/viewing an existing journal */}
       <Route
-        path="/journal"
+        path="/journal/:journalId"
         element={
           userData ? (
-            <Journal userData={userData} aiResponses={aiResponses} hasAnimatedRef={hasAnimatedRef} />
+            <JournalWrapper
+              userData={userData}
+              aiResponses={aiResponses}
+              hasAnimatedRef={hasAnimatedRef}
+            />
           ) : (
             <Navigate to="/landingpage" replace state={{ from: location.pathname }} />
           )
         }
       />
-      {/* Redirect to /home if authenticated, otherwise to /landingpage */}
-      <Route path="*" element={<Navigate to={userData ? "/home" : "/landingpage"} replace state={{ from: location.pathname }} />} />
+      {/* For creating a new journal entry */}
+      <Route
+        path="/journal"
+        element={
+          userData ? (
+            <Journal
+              userData={userData}
+              aiResponses={aiResponses}
+              hasAnimatedRef={hasAnimatedRef}
+              initialJournalId={null}
+            />
+          ) : (
+            <Navigate to="/landingpage" replace state={{ from: location.pathname }} />
+          )
+        }
+      />
+      <Route
+        path="*"
+        element={<Navigate to={userData ? "/home" : "/landingpage"} replace state={{ from: location.pathname }} />}
+      />
     </Routes>
   );
 };

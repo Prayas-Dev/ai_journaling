@@ -1,7 +1,9 @@
 import express from "express";
-import { createJournalChat, createOrUpdateJournalEntry, getPrompt, deleteJournalEntry, getAllJournalEntries, searchJournalEntries } from "./journalController";
+import { getJournalEntryById,createJournalChat, createOrUpdateJournalEntry, getPrompt, deleteJournalEntry, getAllJournalEntries, searchJournalEntries } from "./journalController";
 
 const router = express.Router();
+
+router.get("/entry/:journalId/:userId", getJournalEntryById);
 
 // Create or update a journal entry (with embeddings)
 router.post("/", createOrUpdateJournalEntry);
@@ -20,4 +22,10 @@ router.post("/prompt", getPrompt);
 // Delete a journal entry by date
 router.delete("/:date", deleteJournalEntry);
 
+  router.get("/simple", (req, res) => {
+    // Use res.send() to send a plain string response.
+    // Express will typically set the Content-Type to text/html for this.
+    res.send("This is the simple string response from the server.");
+  });
+  
 export default router;
