@@ -16,7 +16,71 @@ export const createJournalChat: RequestHandler = async (
 ): Promise<void> => {
   try {
     const { entry_text, mode, user_uuid, conversation_id } = journalChatSchema.parse(req.body);
-    console.log(mode);
+
+    // Fetch the top 3 relevant journal entries for context
+    const queryEmbedding = await generateEmbeddings(entry_text);
+    const embeddingString = `[${queryEmbedding.join(",")}]`;
+
+    const journalContextResult = await pool.query(
+      `
+      WITH keyword_search AS (
+        SELECT
+          journal_id,
+          entry_text,
+          entry_date,
+          image_path,
+          0 AS similarity
+        FROM journal_entries
+        WHERE user_id = $1
+          AND entry_text ILIKE '%' || $2 || '%'
+        LIMIT 3
+      ),
+      semantic_search AS (
+        SELECT
+          journal_entries.journal_id,
+          journal_entries.entry_text,
+          journal_entries.entry_date,
+          journal_entries.image_path,
+          journal_embeddings.embedding <=> $3::vector AS similarity
+        FROM journal_entries
+        JOIN journal_embeddings ON journal_entries.journal_id = journal_embeddings.journal_id
+        WHERE journal_entries.user_id = $1
+        ORDER BY similarity ASC
+        LIMIT 3
+      ),
+      combined AS (
+        SELECT * FROM keyword_search
+        UNION ALL
+        SELECT * FROM semantic_search
+      )
+      SELECT
+        journal_id,
+        entry_text,
+        entry_date,
+        image_path,
+        MIN(similarity) AS similarity
+      FROM combined
+      GROUP BY journal_id, entry_text, entry_date, image_path
+      ORDER BY similarity ASC
+      LIMIT 3;
+      `,
+      [user_uuid, entry_text, embeddingString]
+    );
+
+    console.log("Retrieved Journal IDs:", journalContextResult.rows.map((entry: { journal_id: string }) => entry.journal_id));
+
+
+    // Format the journal entries as context
+    const journalEntries = journalContextResult.rows.map(
+      (entry: { entry_text: string, entry_date: string }) =>
+        `- (${entry.entry_date}): ${entry.entry_text}`
+    ).join("\n");
+
+    const journalContext = journalEntries.length
+      ? `Here are some of your previous journal entries that might be relevant:\n${journalEntries}\n\n`
+      : "";
+
+    // Fetch chat history
     const chatHistoryResult = await pool.query(
       `SELECT sender, message_text FROM journal_messages WHERE user_uuid = $1 ORDER BY created_at DESC LIMIT 5`,
       [user_uuid]
@@ -26,8 +90,15 @@ export const createJournalChat: RequestHandler = async (
       .map((chat: { sender: string, message_text: string }) => `${chat.sender}: ${chat.message_text}`)
       .join("\n");
 
-    const aiReply = await getGeminiResponse(entry_text, mode, chatHistoryText);
+    // Generate AI response with context
+    const aiReply = await getGeminiResponse(
+      `${journalContext}User: ${entry_text}\n\nAI (Keep it brief and to the point):`,
+      mode,
+      chatHistoryText
+    );
+    
 
+    // Store messages in DB
     await pool.query(
       `INSERT INTO journal_messages (user_uuid, conversation_id, sender, message_text, mode) VALUES ($1, $2, $3, $4, $5)`,
       [user_uuid, conversation_id, "user", entry_text, mode]
@@ -43,6 +114,7 @@ export const createJournalChat: RequestHandler = async (
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
 
 // Existing getPrompt function (unchanged)
 export const getPrompt: RequestHandler = async (req, res, next): Promise<void> => {

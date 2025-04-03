@@ -78,7 +78,7 @@ function JournalSection({ userData, newEntry, setNewEntry, handleAddEntry, aiRes
         setMessages([...updatedMessages, { text: currentText, sender: "ai" }]);
         index++;
       }
-    }, 50);
+    }, 10);
   };
 
   const handleStopTyping = () => {
