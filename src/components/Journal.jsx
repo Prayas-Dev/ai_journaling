@@ -2,10 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { FaEdit } from "react-icons/fa";
 import PropTypes from "prop-types";
-import { toast, ToastContainer } from 'react-toastify';
-import Modal from "react-modal"
-
-
+import { toast, ToastContainer } from "react-toastify";
+import Modal from "react-modal";
 
 function Journal(props) {
   console.log("Journal component props:", props);
@@ -19,45 +17,55 @@ function Journal(props) {
   const [loadingEntry, setLoadingEntry] = useState(false);
   const [errorLoadingEntry, setErrorLoadingEntry] = useState(null);
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+  const [modalImageSrc, setModalImageSrc] = useState("././images/8.png");
 
+  // Helper function to check if an image exists
+  const checkImageExists = (url) => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = url;
+      img.onload = () => resolve(true);
+      img.onerror = () => resolve(false);
+    });
+  };
 
   // Save conversation to backend
   const handleSaveJournal = async () => {
     try {
       toast.info("Saving journal...", {
-        position: 'top-right',
+        position: "top-right",
         autoClose: 2000,
       });
-  
+
       const storedUser = localStorage.getItem("userData");
       const userData = storedUser && JSON.parse(storedUser);
       const userId = userData?.sub || userData?.id;
       if (!userId) {
         throw new Error("User is not signed in.");
       }
-  
+
       const conversationText = displayedMessages
         .map((msg) => {
           const label = msg.role === "user" ? "User:" : "Prompt:";
           return `${label} ${msg.content}`;
         })
         .join("\n");
-  
+
       const finalText = newMessage.trim();
       const fullConversationText = finalText
         ? `${conversationText}\nUser: ${finalText}`
         : conversationText;
       const entryDate = new Date().toISOString().split("T")[0];
-  
+
       const payload = {
         userId: userId,
         entryText: fullConversationText,
         entry_date: entryDate,
         journalId: currentJournalId,
       };
-  
+
       console.log("Saving payload:", payload);
-  
+
       const response = await fetch("http://localhost:5000/api/journals/", {
         method: "POST",
         headers: {
@@ -65,29 +73,46 @@ function Journal(props) {
         },
         body: JSON.stringify(payload),
       });
-  
+
       if (!response.ok) throw new Error("Failed to save journal entry.");
       const data = await response.json();
       console.log("Journal saved successfully:", data);
-      
+
+      // Update journal id if it was newly created
       if (!currentJournalId && data?.journalId) {
         setCurrentJournalId(data.journalId);
       }
-  
+
+      // Construct candidate image URL
+      const journalIdForImage = currentJournalId || data?.journalId;
+      const candidateImage = journalIdForImage
+        ? `././images/${journalIdForImage}.png`
+        : "././images/8.png";
+
+      const exists = await checkImageExists(candidateImage);
+      if (exists) {
+        setModalImageSrc(candidateImage);
+      } else {
+        // Generate random number between 1 and 11 (inclusive)
+        const randomNumber = Math.floor(Math.random() * 11) + 1;
+        console.log(`././default_images/${randomNumber}.jpeg`);
+        setModalImageSrc(`././default_images/${randomNumber}.jpeg`);
+      }
+
+      // Show success toast and immediately open modal
       toast.success("Journal saved!", {
-        position: 'top-right',
+        position: "top-right",
         autoClose: 2000,
-        onClose: () => setTimeout(() => setIsImageModalOpen(true), 500), // Show modal after toast
       });
+      setIsImageModalOpen(true);
     } catch (error) {
       console.error("Error saving journal entry:", error);
       toast.error("Save Failed!", {
-        position: 'top-right',
+        position: "top-right",
         autoClose: 3000,
       });
     }
   };
-  
 
   useEffect(() => {
     console.log("initialJournalId:", initialJournalId);
@@ -110,22 +135,25 @@ function Journal(props) {
           }
           const data = await response.json();
           console.log("Fetched data:", data);
-          const parsedMessages = data.entry_text.split("\n").map((line) => {
-            if (line.startsWith("User:")) {
-              return {
-                id: Date.now() + Math.random(),
-                role: "user",
-                content: line.substring(5).trim(),
-              };
-            } else if (line.startsWith("Prompt:")) {
-              return {
-                id: Date.now() + Math.random(),
-                role: "ai",
-                content: line.substring(7).trim(),
-              };
-            }
-            return null; // Ignore lines that don't start with "User:" or "Prompt:"
-          }).filter(message => message !== null);
+          const parsedMessages = data.entry_text
+            .split("\n")
+            .map((line) => {
+              if (line.startsWith("User:")) {
+                return {
+                  id: Date.now() + Math.random(),
+                  role: "user",
+                  content: line.substring(5).trim(),
+                };
+              } else if (line.startsWith("Prompt:")) {
+                return {
+                  id: Date.now() + Math.random(),
+                  role: "ai",
+                  content: line.substring(7).trim(),
+                };
+              }
+              return null; // Ignore lines that don't start with "User:" or "Prompt:"
+            })
+            .filter((message) => message !== null);
           setDisplayedMessages(parsedMessages);
           setCurrentJournalId(data.journal_id);
         } catch (error) {
@@ -214,7 +242,9 @@ function Journal(props) {
     setEditedMessage("");
 
     // Fetch new AI response for the edited message
-    const editedMessageObj = updatedMessages.find((msg) => msg.id === editingMessageId);
+    const editedMessageObj = updatedMessages.find(
+      (msg) => msg.id === editingMessageId
+    );
     if (editedMessageObj && editedMessageObj.role === "user") {
       setAiTyping(true);
       try {
@@ -248,11 +278,15 @@ function Journal(props) {
   return (
     <div className="space-y-4 p-6 min-h-screen bg-white">
       <ToastContainer />
-      <h1 className="text-2xl font-semibold text-center mb-4">Journal Entries</h1>
+      <h1 className="text-2xl font-semibold text-center mb-4">
+        Journal Entries
+      </h1>
       {loadingEntry ? (
         <p className="text-center text-gray-500">Loading journal entry...</p>
       ) : errorLoadingEntry ? (
-        <p className="text-center text-red-500">Error loading entry: {errorLoadingEntry}</p>
+        <p className="text-center text-red-500">
+          Error loading entry: {errorLoadingEntry}
+        </p>
       ) : displayedMessages.length === 0 && !initialJournalId ? (
         <p className="text-gray-500 text-center">Start writing</p>
       ) : (
@@ -287,7 +321,9 @@ function Journal(props) {
           )
         )
       )}
-      {aiTyping && <p className="text-gray-500 italic text-left">AI is thinking...</p>}
+      {aiTyping && (
+        <p className="text-gray-500 italic text-left">AI is thinking...</p>
+      )}
       <div className="mt-6 flex flex-col items-start gap-2 w-full">
         <textarea
           value={newMessage}
@@ -319,12 +355,12 @@ function Journal(props) {
         </div>
       </div>
       <Modal
-    isOpen={isImageModalOpen}
-    onRequestClose={() => setIsImageModalOpen(false)}
-    contentLabel="Saved Successfully"
-    style={{
-        overlay: { backgroundColor: "rgba(0, 0, 0, 0.5)" },
-        content: {
+        isOpen={isImageModalOpen}
+        onRequestClose={() => setIsImageModalOpen(false)}
+        contentLabel="Saved Successfully"
+        style={{
+          overlay: { backgroundColor: "rgba(0, 0, 0, 0.5)" },
+          content: {
             width: "auto",
             height: "auto",
             maxWidth: "90vw",
@@ -336,87 +372,87 @@ function Journal(props) {
             alignItems: "center",
             justifyContent: "center",
             background: "transparent",
-            overflow: "hidden"
-        }
-    }}
->
-    {/* State for Slide Index */}
-    {(() => {
-        const [slideIndex, setSlideIndex] = useState(0);
-        const totalSlides = 2;
+            overflow: "hidden",
+          },
+        }}
+      >
+        {/* State for Slide Index */}
+        {(() => {
+          const [slideIndex, setSlideIndex] = useState(0);
+          const totalSlides = 2;
 
-        return (
-            <div style={{
+          return (
+            <div
+              style={{
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 position: "relative",
                 width: "100%",
                 height: "100%",
-            }}>
-                {/* Left Arrow Button */}
-                <button 
-                    style={{
-                        position: "absolute",
-                        left: "10px",
-                        background: "rgba(0, 0, 0, 0.5)",
-                        color: "white",
-                        border: "none",
-                        padding: "10px",
-                        borderRadius: "5px",
-                        cursor: "pointer",
-                        display: slideIndex > 0 ? "block" : "none"
-                    }}
-                    onClick={() => setSlideIndex(slideIndex - 1)}
-                >
-                    ◀
-                </button>
+              }}
+            >
+              {/* Left Arrow Button */}
+              <button
+                style={{
+                  position: "absolute",
+                  left: "10px",
+                  background: "rgba(0, 0, 0, 0.5)",
+                  color: "white",
+                  border: "none",
+                  padding: "10px",
+                  borderRadius: "5px",
+                  cursor: "pointer",
+                  display: slideIndex > 0 ? "block" : "none",
+                }}
+                onClick={() => setSlideIndex(slideIndex - 1)}
+              >
+                ◀
+              </button>
 
-                {/* Slides */}
-                {slideIndex === 0 && currentJournalId && (
-                    <img 
-                        src={`././images/8.png`}  
-                        alt="Saved Successfully" 
-                        style={{
-                            maxWidth: "100%", 
-                            maxHeight: "100%", 
-                            objectFit: "contain"
-                        }} 
-                    />
-                )}
-                {slideIndex === 1 && (
-                    <div style={{
-                        width: "80vw",
-                        height: "80vh",
-                        background: "white"
-                    }}></div>
-                )}
+              {/* Slides */}
+              {slideIndex === 0 && currentJournalId && (
+                <img
+                  src={modalImageSrc}
+                  alt="Saved Successfully"
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "100%",
+                    objectFit: "contain",
+                  }}
+                />
+              )}
+              {slideIndex === 1 && (
+                <div
+                  style={{
+                    width: "80vw",
+                    height: "80vh",
+                    background: "white",
+                  }}
+                ></div>
+              )}
 
-                {/* Right Arrow Button */}
-                <button 
-                    style={{
-                        position: "absolute",
-                        right: "10px",
-                        background: "rgba(0, 0, 0, 0.5)",
-                        color: "white",
-                        border: "none",
-                        padding: "10px",
-                        borderRadius: "5px",
-                        cursor: "pointer",
-                        display: slideIndex < totalSlides - 1 ? "block" : "none"
-                    }}
-                    onClick={() => setSlideIndex(slideIndex + 1)}
-                >
-                    ▶
-                </button>
+              {/* Right Arrow Button */}
+              <button
+                style={{
+                  position: "absolute",
+                  right: "10px",
+                  background: "rgba(0, 0, 0, 0.5)",
+                  color: "white",
+                  border: "none",
+                  padding: "10px",
+                  borderRadius: "5px",
+                  cursor: "pointer",
+                  display: slideIndex < totalSlides - 1 ? "block" : "none",
+                }}
+                onClick={() => setSlideIndex(slideIndex + 1)}
+              >
+                ▶
+              </button>
             </div>
-        );
-    })()}
-</Modal>
-
-
-
-
+          );
+        })()}
+      </Modal>
     </div>
   );
 }
