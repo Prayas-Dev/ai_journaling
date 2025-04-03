@@ -158,7 +158,11 @@ const splitIntoSentences = (text: string): string[] => {
 };
 
 
-export const createOrUpdateJournalEntry: RequestHandler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const createOrUpdateJournalEntry: RequestHandler = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -170,11 +174,16 @@ export const createOrUpdateJournalEntry: RequestHandler = async (req: Request, r
     let isNewEntry = false;
 
     if (!userId || !entryText) {
-      res.status(400).json({ error: "Missing required fields: userId and entryText" });
+      res
+        .status(400)
+        .json({ error: "Missing required fields: userId and entryText" });
       return;
     }
 
-    const emotion_labels: string[] = [];
+    // We'll eventually store emotion analysis in our response.
+    let emotionAnalysisResults: { emotion: string; emoji: string }[] = [];
+    // This will be the array of valid emotion labels to store in the DB.
+    let emotionLabels: string[] = [];
 
     if (journalId) {
       existingJournalId = parseInt(journalId, 10);
@@ -183,18 +192,30 @@ export const createOrUpdateJournalEntry: RequestHandler = async (req: Request, r
         [existingJournalId, userId]
       );
       if (existingJournalResult.rows.length > 0) {
-        createdAtTimestamp = new Date(existingJournalResult.rows[0].entry_date).getTime();
-        await client.query(`DELETE FROM journal_entry_chunks WHERE journal_id = $1`, [existingJournalId]);
+        createdAtTimestamp = new Date(
+          existingJournalResult.rows[0].entry_date
+        ).getTime();
+        // Delete existing entry chunks so that we can reinsert them
+        await client.query(
+          `DELETE FROM journal_entry_chunks WHERE journal_id = $1`,
+          [existingJournalId]
+        );
         const updateJournalQuery = `
           UPDATE journal_entries
           SET entry_text = $1, last_modified = NOW(), image_path = NULL -- Reset image path on update
           WHERE journal_id = $2 AND user_id = $3
           RETURNING entry_date;
         `;
-        const updateResult = await client.query(updateJournalQuery, [entryText.trim(), existingJournalId, userId]);
+        const updateResult = await client.query(updateJournalQuery, [
+          entryText.trim(),
+          existingJournalId,
+          userId,
+        ]);
         if (updateResult.rowCount === 0) {
           await client.query("ROLLBACK");
-          res.status(404).json({ error: "Journal entry not found or does not belong to the user." });
+          res.status(404).json({
+            error: "Journal entry not found or does not belong to the user.",
+          });
           return;
         }
       } else {
@@ -209,35 +230,72 @@ export const createOrUpdateJournalEntry: RequestHandler = async (req: Request, r
         VALUES ($1, $2, $3, $4)
         RETURNING journal_id, entry_date;
       `;
-      const journalInsertResult = await client.query(insertJournalQuery, [userId, entryText.trim(), emotion_labels, entryDate]);
+      const journalInsertResult = await client.query(insertJournalQuery, [
+        userId,
+        entryText.trim(),
+        emotionLabels,
+        entryDate,
+      ]);
       existingJournalId = journalInsertResult.rows[0].journal_id;
-      createdAtTimestamp = new Date(journalInsertResult.rows[0].entry_date).getTime();
+      createdAtTimestamp = new Date(
+        journalInsertResult.rows[0].entry_date
+      ).getTime();
     }
 
     if (existingJournalId !== null) {
       const sentences = splitIntoSentences(entryText);
-      for (let i = 0; i < sentences.length; i++) {
-        const sentence = sentences[i].trim();
-        if (sentence) {
-          try {
-            const vectorEmbeddings = await generateEmbeddings(sentence);
-            const vectorString = `[${vectorEmbeddings.join(',')}]`;
-            const insertChunkQuery = `
-              INSERT INTO journal_entry_chunks (journal_id, chunk_index, chunk_text, embedding)
-              VALUES ($1, $2, $3, $4::vector);
-            `;
-            await client.query(insertChunkQuery, [existingJournalId, i, sentence, vectorString]);
-          } catch (embeddingError) {
-            console.error("Error generating embedding for chunk:", sentence, embeddingError);
-            // Decide how to handle embedding errors: skip the chunk, rollback, etc.
-            // For now, we'll log the error and continue.
-          }
+      const insertChunkQuery = `
+        INSERT INTO journal_entry_chunks (journal_id, chunk_index, chunk_text, embedding)
+        VALUES ($1, $2, $3, $4::vector);
+      `;
+      // Prepare embedding promises for all sentences concurrently
+      const embeddingPromises = sentences.map((sentence, i) => {
+        const trimmed = sentence.trim();
+        if (trimmed) {
+          return generateEmbeddings(trimmed)
+            .then((vectorEmbeddings) => {
+              const vectorString = `[${vectorEmbeddings.join(",")}]`;
+              return client.query(insertChunkQuery, [
+                existingJournalId,
+                i,
+                trimmed,
+                vectorString,
+              ]);
+            })
+            .catch((embeddingError) => {
+              console.error(
+                "Error generating embedding for chunk:",
+                trimmed,
+                embeddingError
+              );
+              // Continue even if one embedding fails
+            });
+        } else {
+          // If the sentence is empty, return a resolved promise.
+          return Promise.resolve();
         }
-      }
+      });
 
-      // Generate and store the image
-      const imagePath = await generateImageFromJournalEntry(entryText, existingJournalId.toString()); // Pass journalId
+      // Fire off image generation and emotion analysis concurrently
+      const imagePromise = generateImageFromJournalEntry(
+        entryText,
+        existingJournalId.toString()
+      );
+      const emotionPromise = analyzeEmotions(entryText);
 
+      // Wait for all promises (embeddings, image generation, and emotion analysis) to complete
+      const results = await Promise.all([
+        ...embeddingPromises,
+        imagePromise,
+        emotionPromise,
+      ]);
+
+      // Extract the image result and emotion analysis result from the returned array.
+      // The image result is at the index equal to embeddingPromises.length and the emotion analysis is right after.
+      const imagePath = results[embeddingPromises.length];
+      emotionAnalysisResults = results[embeddingPromises.length + 1];
+
+      // Update the journal entry with the image path if available.
       if (imagePath) {
         const updateImagePathQuery = `
           UPDATE journal_entries
@@ -246,10 +304,24 @@ export const createOrUpdateJournalEntry: RequestHandler = async (req: Request, r
         `;
         await client.query(updateImagePathQuery, [imagePath, existingJournalId]);
       }
+
+      // Extract only the emotion labels from the analysis result (ignore the emojis)
+      emotionLabels = emotionAnalysisResults.map((item) => item.emotion);
+      // Update the emotion_labels column (type text[]) in the journal entry.
+      const updateEmotionQuery = `
+        UPDATE journal_entries
+        SET emotion_labels = $1
+        WHERE journal_id = $2;
+      `;
+      await client.query(updateEmotionQuery, [emotionLabels, existingJournalId]);
     }
 
     await client.query("COMMIT");
-    res.status(200).json({ message: "Success", journalId: existingJournalId });
+    res.status(200).json({
+      message: "Success",
+      journalId: existingJournalId,
+      emotions: emotionAnalysisResults,
+    });
   } catch (error: any) {
     await client.query("ROLLBACK");
     res.status(500).json({ error: error.message });
@@ -257,6 +329,7 @@ export const createOrUpdateJournalEntry: RequestHandler = async (req: Request, r
     client.release();
   }
 };
+
 
 export const deleteJournalEntryByIdAndUserId: RequestHandler = async (req: Request, res: Response): Promise<void> => {
   const client = await pool.connect();

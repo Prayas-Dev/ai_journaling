@@ -97,7 +97,7 @@ const getJsonString = async (responseText: string): Promise<string> => {
   }
 };
 
-export const analyzeEmotions = async (entryText: string): Promise<{emotion:string,percentage:number}[]> => {
+export const analyzeEmotions = async (entryText: string): Promise<{ emotion: string; emoji: string }[]> => {
   const prompt = `
 Given the following journal entry, identify and classify the top 5 emotions strictly from this predefined list of 28 emotions in the GoEmotions dataset: ${validEmotions.join(", ")}.
 
@@ -111,11 +111,11 @@ Return the output in the following JSON format without any extra text or explana
 \`\`\`json
 {
   "emotions": [
-    [emotion1, percentage1],
-    [emotion2, percentage2],
-    [emotion3, percentage3],
-    [emotion4, percentage4],
-    [emotion5, percentage5]
+    [emotion1, emoji1],
+    [emotion2, emoji2],
+    [emotion3, emoji3],
+    [emotion4, emoji4],
+    [emotion5, emoji5]
   ]
 }
 \`\`\`
@@ -135,19 +135,21 @@ ${entryText}
     }
 
     const parsedData = JSON.parse(jsonString);
-    const emotionsMap = new Map<string, number>();
+    const emotionsMap = new Map<string, string>();
 
-    parsedData.emotions.forEach(([emotion, percentage]: [string, number]) => {
+    parsedData.emotions.forEach(([emotion, emoji]: [string, string]) => {
       const validEmotion = getValidEmotion(emotion);
-      emotionsMap.set(validEmotion, (emotionsMap.get(validEmotion) || 0) + percentage);
+      // If the emotion already exists, we can choose to overwrite or keep the first emoji.
+      emotionsMap.set(validEmotion, emoji);
     });
 
-    return Array.from(emotionsMap, ([emotion, percentage]) => ({ emotion, percentage }));
+    return Array.from(emotionsMap, ([emotion, emoji]) => ({ emotion, emoji }));
   } catch (error) {
     console.error("Error in emotion analysis:", error);
     return [];
   }
 };
+
 
 export const emotionAnalysisAndGeneratePrompt = async (
   entryText: string

@@ -1,2 +1,2 @@
-DELETE http://localhost:5000/api/journals/107877752068882946565/41
+DELETE http://localhost:5000/api/journals/456/115554072083806975013
 Accept: application/json
