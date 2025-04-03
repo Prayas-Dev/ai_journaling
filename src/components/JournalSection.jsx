@@ -93,7 +93,7 @@ function JournalSection({ userData, newEntry, setNewEntry, handleAddEntry, aiRes
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gradient-to-r from-blue-100 via-purple-100 to-pink-100">
       <div className="w-full sm:max-w-md md:max-w-lg lg:max-w-2xl xl:max-w-3xl h-auto bg-white p-8 rounded-xl shadow-xl flex flex-col">
         <div className="flex justify-between items-center mb-4">
-          <h1 className="text-2xl font-semibold">Chat with AI</h1>
+          <h1 className="text-2xl font-semibold">Chat with AI Therapist</h1>
           <select
             className="p-2 border rounded-md bg-gray-100 text-gray-700"
             value={mode}
