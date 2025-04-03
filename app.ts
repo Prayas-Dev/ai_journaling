@@ -1,11 +1,11 @@
 // backend/app.ts
 import express from "express";
-import cors from "cors";
+const cors = require("cors");
 import session from "express-session";
 import passport from "passport";
 import jwt from "jsonwebtoken";
 import "./src/middleware/auth"; // Loads passport configuration
-import journalRoutes from "./src/api/journals/journalRoutes";
+import journalRoutes from "./backend/src/api/journals/journalRoutes";
 
 const app = express();
 

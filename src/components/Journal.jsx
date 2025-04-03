@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { FaEdit } from "react-icons/fa";
 import PropTypes from "prop-types";
 import { toast, ToastContainer } from 'react-toastify';
+import Modal from "react-modal"
 
 
 
@@ -17,42 +18,46 @@ function Journal(props) {
   const [currentJournalId, setCurrentJournalId] = useState(initialJournalId || null);
   const [loadingEntry, setLoadingEntry] = useState(false);
   const [errorLoadingEntry, setErrorLoadingEntry] = useState(null);
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+
 
   // Save conversation to backend
   const handleSaveJournal = async () => {
     try {
       toast.info("Saving journal...", {
-        position: 'top-right',        autoClose: 2000,
+        position: 'top-right',
+        autoClose: 2000,
       });
+  
       const storedUser = localStorage.getItem("userData");
       const userData = storedUser && JSON.parse(storedUser);
       const userId = userData?.sub || userData?.id;
       if (!userId) {
         throw new Error("User is not signed in.");
       }
-
+  
       const conversationText = displayedMessages
         .map((msg) => {
           const label = msg.role === "user" ? "User:" : "Prompt:";
           return `${label} ${msg.content}`;
         })
         .join("\n");
-
+  
       const finalText = newMessage.trim();
       const fullConversationText = finalText
         ? `${conversationText}\nUser: ${finalText}`
         : conversationText;
       const entryDate = new Date().toISOString().split("T")[0];
-
+  
       const payload = {
         userId: userId,
         entryText: fullConversationText,
         entry_date: entryDate,
         journalId: currentJournalId,
       };
-
+  
       console.log("Saving payload:", payload);
-
+  
       const response = await fetch("http://localhost:5000/api/journals/", {
         method: "POST",
         headers: {
@@ -60,15 +65,19 @@ function Journal(props) {
         },
         body: JSON.stringify(payload),
       });
+  
       if (!response.ok) throw new Error("Failed to save journal entry.");
       const data = await response.json();
       console.log("Journal saved successfully:", data);
+      
       if (!currentJournalId && data?.journalId) {
         setCurrentJournalId(data.journalId);
       }
+  
       toast.success("Journal saved!", {
         position: 'top-right',
         autoClose: 2000,
+        onClose: () => setTimeout(() => setIsImageModalOpen(true), 500), // Show modal after toast
       });
     } catch (error) {
       console.error("Error saving journal entry:", error);
@@ -78,6 +87,7 @@ function Journal(props) {
       });
     }
   };
+  
 
   useEffect(() => {
     console.log("initialJournalId:", initialJournalId);
@@ -308,6 +318,105 @@ function Journal(props) {
           )}
         </div>
       </div>
+      <Modal
+    isOpen={isImageModalOpen}
+    onRequestClose={() => setIsImageModalOpen(false)}
+    contentLabel="Saved Successfully"
+    style={{
+        overlay: { backgroundColor: "rgba(0, 0, 0, 0.5)" },
+        content: {
+            width: "auto",
+            height: "auto",
+            maxWidth: "90vw",
+            maxHeight: "90vh",
+            margin: "auto",
+            padding: "0px",
+            borderRadius: "10px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "transparent",
+            overflow: "hidden"
+        }
+    }}
+>
+    {/* State for Slide Index */}
+    {(() => {
+        const [slideIndex, setSlideIndex] = useState(0);
+        const totalSlides = 2;
+
+        return (
+            <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                position: "relative",
+                width: "100%",
+                height: "100%",
+            }}>
+                {/* Left Arrow Button */}
+                <button 
+                    style={{
+                        position: "absolute",
+                        left: "10px",
+                        background: "rgba(0, 0, 0, 0.5)",
+                        color: "white",
+                        border: "none",
+                        padding: "10px",
+                        borderRadius: "5px",
+                        cursor: "pointer",
+                        display: slideIndex > 0 ? "block" : "none"
+                    }}
+                    onClick={() => setSlideIndex(slideIndex - 1)}
+                >
+                    ◀
+                </button>
+
+                {/* Slides */}
+                {slideIndex === 0 && currentJournalId && (
+                    <img 
+                        src={`././images/8.png`}  
+                        alt="Saved Successfully" 
+                        style={{
+                            maxWidth: "100%", 
+                            maxHeight: "100%", 
+                            objectFit: "contain"
+                        }} 
+                    />
+                )}
+                {slideIndex === 1 && (
+                    <div style={{
+                        width: "80vw",
+                        height: "80vh",
+                        background: "white"
+                    }}></div>
+                )}
+
+                {/* Right Arrow Button */}
+                <button 
+                    style={{
+                        position: "absolute",
+                        right: "10px",
+                        background: "rgba(0, 0, 0, 0.5)",
+                        color: "white",
+                        border: "none",
+                        padding: "10px",
+                        borderRadius: "5px",
+                        cursor: "pointer",
+                        display: slideIndex < totalSlides - 1 ? "block" : "none"
+                    }}
+                    onClick={() => setSlideIndex(slideIndex + 1)}
+                >
+                    ▶
+                </button>
+            </div>
+        );
+    })()}
+</Modal>
+
+
+
+
     </div>
   );
 }

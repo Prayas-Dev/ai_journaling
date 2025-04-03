@@ -4,8 +4,9 @@ import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
 function HistorySection() {
-  const [entries, setEntries] = useState([]);
-  const [loading, setLoading] = useState(true); // Set default loading to true
+  const [allEntries, setAllEntries] = useState([]); // Store all fetched entries
+  const [entries, setEntries] = useState([]); // Store filtered entries
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [query, setQuery] = useState('');
   const navigate = useNavigate();
@@ -25,17 +26,13 @@ function HistorySection() {
       setLoading(true);
       setError(null);
       try {
-        let url = `http://localhost:5000/api/jounals/all/${userId}`; // Updated route for fetching all
-        if (query.trim() !== '') {
-          url = `http://localhost:5000/api/journals/search/${userId}?query=${encodeURIComponent(query)}`;
-        }
-        const response = await fetch(url);
+        const response = await fetch(`http://localhost:5000/api/journals/all/${userId}`);
         if (!response.ok) {
           throw new Error("Failed to fetch journal entries");
         }
         const data = await response.json();
-        console.log(data);
-        setEntries(data);
+        setAllEntries(data); // Store all fetched data
+        setEntries(data); // Initially, show all entries
       } catch (err) {
         setError(err.message || "Error fetching entries");
       } finally {
@@ -44,10 +41,21 @@ function HistorySection() {
     };
 
     fetchEntries();
-  }, [userId, query]);
+  }, [userId]);
+
+  // Filter entries based on search query
+  useEffect(() => {
+    if (query.trim() === '') {
+      setEntries(allEntries); // Show all entries if search is empty
+    } else {
+      const filteredEntries = allEntries.filter((entry) =>
+        entry.entry_text.toLowerCase().includes(query.toLowerCase())
+      );
+      setEntries(filteredEntries);
+    }
+  }, [query, allEntries]);
 
   const handleEntryClick = (journalId) => {
-    console.log("Clicked journal ID:", journalId);
     navigate(`/journal/${journalId}`);
   };
 
@@ -65,13 +73,14 @@ function HistorySection() {
         throw new Error("Failed to delete journal entry");
       }
 
+      setAllEntries(allEntries.filter(entry => entry.journal_id !== journalId));
       setEntries(entries.filter(entry => entry.journal_id !== journalId));
+
       toast.success("Journal entry deleted successfully!", {
         position: 'top-right',
         autoClose: 2000,
       });
     } catch (err) {
-      console.error("Error deleting journal entry:", err);
       toast.error(err.message || "Failed to delete journal entry.", {
         position: 'top-right',
         autoClose: 3000,
@@ -80,10 +89,11 @@ function HistorySection() {
   };
 
   return (
-    <div className="p-4">
+    <div className="p-4 m-4">
       <ToastContainer />
       <h2 className="text-2xl font-semibold mb-4">Journal History</h2>
 
+      {/* Search Bar */}
       <div className="mb-4">
         <input
           type="text"
@@ -95,6 +105,7 @@ function HistorySection() {
         />
       </div>
 
+      {/* Display Entries */}
       {loading ? (
         <p className="text-center text-neutral-500">Loading entries...</p>
       ) : error ? (
@@ -111,16 +122,16 @@ function HistorySection() {
               <div
                 onClick={() => handleEntryClick(entry.journal_id)}
                 className="cursor-pointer"
-                style={{ flexGrow: 1 }} // Allow text to take up available space
+                style={{ flexGrow: 1 }}
               >
                 <p className="text-sm text-neutral-500">
                   <strong>Date:</strong> {entry.entry_date}
                 </p>
-                <p className="mt-2">{entry.entry_text.substring(0, 100)}...</p> {/* Show a preview */}
+                <p className="mt-2">{entry.entry_text.substring(0, 100)}...</p>
               </div>
               <button
                 onClick={(e) => {
-                  e.stopPropagation(); // Prevent handleEntryClick from being called
+                  e.stopPropagation();
                   handleDeleteEntry(entry.journal_id);
                 }}
                 className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline ml-4"
