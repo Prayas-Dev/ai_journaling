@@ -246,7 +246,6 @@ ${entryText}
 };
 
 const newGenAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }); // Initialize the new client
-
 export const generateImageFromJournalEntry = async (entryText: string, journalId?: string): Promise<string | null> => {
   try {
     // Step 1: Generate a concise image prompt from the journal entry
@@ -326,5 +325,3 @@ Create a vivid and imaginative image prompt based on the following journal entry
     return null;
   }
 };
-
-
