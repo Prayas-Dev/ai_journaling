@@ -18,6 +18,8 @@ function Journal(props) {
   const [errorLoadingEntry, setErrorLoadingEntry] = useState(null);
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
   const [modalImageSrc, setModalImageSrc] = useState("././images/8.png");
+  // Emotion analysis state: an array of objects { emotion, emoji }
+  const [emotionAnalysis, setEmotionAnalysis] = useState([]);
 
   // Helper function to check if an image exists
   const checkImageExists = (url) => {
@@ -82,6 +84,10 @@ function Journal(props) {
       if (!currentJournalId && data?.journalId) {
         setCurrentJournalId(data.journalId);
       }
+      // Set emotion analysis if provided by backend
+      if (data.emotions) {
+        setEmotionAnalysis(data.emotions);
+      }
 
       // Construct candidate image URL
       const journalIdForImage = currentJournalId || data?.journalId;
@@ -95,11 +101,10 @@ function Journal(props) {
       } else {
         // Generate random number between 1 and 11 (inclusive)
         const randomNumber = Math.floor(Math.random() * 11) + 1;
-        console.log(`././default_images/${randomNumber}.jpeg`);
+        console.log(`Using fallback image: ././default_images/${randomNumber}.jpeg`);
         setModalImageSrc(`././default_images/${randomNumber}.jpeg`);
       }
 
-      // Show success toast and immediately open modal
       toast.success("Journal saved!", {
         position: "top-right",
         autoClose: 2000,
@@ -376,7 +381,6 @@ function Journal(props) {
           },
         }}
       >
-        {/* State for Slide Index */}
         {(() => {
           const [slideIndex, setSlideIndex] = useState(0);
           const totalSlides = 2;
@@ -410,7 +414,7 @@ function Journal(props) {
                 ◀
               </button>
 
-              {/* Slides */}
+              {/* Slide 0: Image */}
               {slideIndex === 0 && currentJournalId && (
                 <img
                   src={modalImageSrc}
@@ -422,14 +426,30 @@ function Journal(props) {
                   }}
                 />
               )}
+
+              {/* Slide 1: Emotion Dump */}
               {slideIndex === 1 && (
-                <div
-                  style={{
-                    width: "80vw",
-                    height: "80vh",
-                    background: "white",
-                  }}
-                ></div>
+                <div className="p-6">
+                  <h2 className="text-3xl font-bold mb-4 text-center">
+                    Emotion Analysis
+                  </h2>
+                  {emotionAnalysis.length > 0 ? (
+                    <ul className="space-y-2">
+                      {emotionAnalysis.map((item, index) => (
+                        <li
+                          key={index}
+                          className="text-xl text-center"
+                        >
+                          {item.emotion} -> {item.emoji}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-lg text-center">
+                      No emotion data available.
+                    </p>
+                  )}
+                </div>
               )}
 
               {/* Right Arrow Button */}
@@ -500,7 +520,8 @@ function TypingText({ text, messageId, hasAnimatedRef }) {
 
 TypingText.propTypes = {
   text: PropTypes.string.isRequired,
-  messageId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  messageId: PropTypes.oneOfType([PropTypes.string, PropTypes.number])
+    .isRequired,
   hasAnimatedRef: PropTypes.shape({
     current: PropTypes.shape({
       has: PropTypes.func.isRequired,
