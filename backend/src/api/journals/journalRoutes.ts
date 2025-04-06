@@ -1,9 +1,12 @@
 import express from "express";
 import { deleteJournalEntryByIdAndUserId,getJournalEntryById,createJournalChat, createOrUpdateJournalEntry, getPrompt, deleteJournalEntry, getAllJournalEntries, searchJournalEntries } from "./journalController";
+const path = require('path');
 
 const router = express.Router();
 
 router.get("/entry/:journalId/:userId", getJournalEntryById);
+
+router.use('/default_images', express.static(path.join(__dirname, 'default_images')));
 
 // Create or update a journal entry (with embeddings)
 router.post("/", createOrUpdateJournalEntry);

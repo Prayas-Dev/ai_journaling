@@ -15,98 +15,117 @@ export const createJournalChat: RequestHandler = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    // Validate and extract request body using your schema
     const { entry_text, mode, user_uuid, conversation_id } = journalChatSchema.parse(req.body);
 
-    // Fetch the top 3 relevant journal entries for context
+    // Generate embedding for semantic search and format it as a string for SQL
     const queryEmbedding = await generateEmbeddings(entry_text);
     const embeddingString = `[${queryEmbedding.join(",")}]`;
 
+    // Extract keywords from input for flexible substring matching
+    const keywords =
+      entry_text.toLowerCase().match(/\w+/g)?.filter((w) => w.length > 2) || [];
+    // Dynamically build ILIKE conditions for full-text search on journal_entries
+    const keywordConditions =
+      keywords.length > 0
+        ? keywords
+            .map((_, i) => `entry_text ILIKE '%' || $${i + 2} || '%'`)
+            .join(" OR ")
+        : "FALSE";
+
+    // Build query values:
+    // $1: user_id for both semantic and keyword search,
+    // $2...: keywords,
+    // Last parameter: the embeddingString.
+    const queryValues = [user_uuid, ...keywords, embeddingString];
+
+    // Hybrid search: semantic search on chunks (with cosine similarity) and keyword search on full entries.
+    // The keyword search is assigned a fallback similarity value of 1.5.
     const journalContextResult = await pool.query(
       `
-      WITH keyword_search AS (
-        SELECT
+      WITH semantic_search AS (
+        SELECT 
           journal_id,
-          entry_text,
-          entry_date,
-          image_path,
-          0 AS similarity
-        FROM journal_entries
-        WHERE user_id = $1
-          AND entry_text ILIKE '%' || $2 || '%'
-        LIMIT 3
-      ),
-      semantic_search AS (
-        SELECT
-          journal_entries.journal_id,
-          journal_entries.entry_text,
-          journal_entries.entry_date,
-          journal_entries.image_path,
-          journal_embeddings.embedding <=> $3::vector AS similarity
-        FROM journal_entries
-        JOIN journal_embeddings ON journal_entries.journal_id = journal_embeddings.journal_id
-        WHERE journal_entries.user_id = $1
+          MIN(embedding <-> $${queryValues.length}::vector) AS similarity
+        FROM journal_entry_chunks
+        WHERE journal_id IN (
+          SELECT journal_id FROM journal_entries WHERE user_id = $1
+        )
+        GROUP BY journal_id
         ORDER BY similarity ASC
         LIMIT 3
       ),
+      keyword_search AS (
+        SELECT
+          journal_id,
+          1.5 AS similarity
+        FROM journal_entries
+        WHERE user_id = $1
+          AND (${keywordConditions})
+        LIMIT 3
+      ),
       combined AS (
-        SELECT * FROM keyword_search
-        UNION ALL
         SELECT * FROM semantic_search
+        UNION
+        SELECT * FROM keyword_search
       )
       SELECT
-        journal_id,
-        entry_text,
-        entry_date,
-        image_path,
+        je.journal_id,
+        je.entry_text,
+        je.entry_date,
+        je.image_path,
         MIN(similarity) AS similarity
       FROM combined
-      GROUP BY journal_id, entry_text, entry_date, image_path
+      JOIN journal_entries je ON combined.journal_id = je.journal_id
+      GROUP BY je.journal_id, je.entry_text, je.entry_date, je.image_path
       ORDER BY similarity ASC
       LIMIT 3;
       `,
-      [user_uuid, entry_text, embeddingString]
+      queryValues
     );
 
-    console.log("Retrieved Journal IDs:", journalContextResult.rows.map((entry: { journal_id: string }) => entry.journal_id));
+    console.log("Journal Context Result:", journalContextResult.rows);
 
 
-    // Format the journal entries as context
-    const journalEntries = journalContextResult.rows.map(
-      (entry: { entry_text: string, entry_date: string }) =>
-        `- (${entry.entry_date}): ${entry.entry_text}`
-    ).join("\n");
+    // Format the retrieved journal entries as context text
+    const relevantEntries = journalContextResult.rows
+      .map(
+        (entry: { entry_text: string; entry_date: string }) =>
+          `- (${entry.entry_date}): ${entry.entry_text}`
+      )
+      .join("\n");
 
-    const journalContext = journalEntries.length
-      ? `Here are some of your previous journal entries that might be relevant:\n${journalEntries}\n\n`
+    const journalContext = relevantEntries
+      ? `Here are some of your previous journal entries that might be relevant:\n${relevantEntries}\n\n`
       : "";
 
-    // Fetch chat history
+    // Fetch recent chat history to provide context
     const chatHistoryResult = await pool.query(
       `SELECT sender, message_text FROM journal_messages WHERE user_uuid = $1 ORDER BY created_at DESC LIMIT 5`,
       [user_uuid]
     );
 
     const chatHistoryText = chatHistoryResult.rows
-      .map((chat: { sender: string, message_text: string }) => `${chat.sender}: ${chat.message_text}`)
+      .map(
+        (msg: { sender: string; message_text: string }) =>
+          `${msg.sender}: ${msg.message_text}`
+      )
       .join("\n");
 
-    // Generate AI response with context
+    // Generate AI reply using your Gemini API (or similar)
     const aiReply = await getGeminiResponse(
       `${journalContext}User: ${entry_text}\n\nAI (Keep it brief and to the point):`,
       mode,
       chatHistoryText
     );
-    
 
-    // Store messages in DB
-    await pool.query(
-      `INSERT INTO journal_messages (user_uuid, conversation_id, sender, message_text, mode) VALUES ($1, $2, $3, $4, $5)`,
-      [user_uuid, conversation_id, "user", entry_text, mode]
-    );
-    await pool.query(
-      `INSERT INTO journal_messages (user_uuid, conversation_id, sender, message_text, mode) VALUES ($1, $2, $3, $4, $5)`,
-      [user_uuid, conversation_id, "ai", aiReply, mode]
-    );
+    // Store both the user and AI messages
+    const insertMessage = `
+      INSERT INTO journal_messages (user_uuid, conversation_id, sender, message_text, mode)
+      VALUES ($1, $2, $3, $4, $5)
+    `;
+    await pool.query(insertMessage, [user_uuid, conversation_id, "user", entry_text, mode]);
+    await pool.query(insertMessage, [user_uuid, conversation_id, "ai", aiReply, mode]);
 
     res.status(200).json({ response_text: aiReply });
   } catch (error) {
@@ -156,74 +175,101 @@ export const getAllJournalEntries: RequestHandler = async (req, res) => {
   }
 };
 
-// New endpoint: Search journal entries using hybrid search
 export const searchJournalEntries: RequestHandler = async (req, res) => {
   try {
     const userId = req.params.userId;
     const searchQuery = req.query.query;
+
     if (!userId) {
       res.status(400).json({ error: "User ID is required" });
       return;
     }
+
     if (!searchQuery || typeof searchQuery !== 'string') {
       res.status(400).json({ error: "Valid query parameter is required" });
       return;
     }
 
+    // Tokenize search query into keywords (e.g., "feeling gloomy today" => ['feeling', 'gloomy', 'today'])
+    const keywords =
+      searchQuery.toLowerCase().match(/\w+/g)?.filter((w) => w.length > 2) || [];
+
+    // Dynamically build ILIKE conditions for full-text search on journal entries
+    const keywordConditions =
+      keywords.length > 0
+        ? keywords
+            .map((_, idx) => `entry_text ILIKE '%' || $${idx + 3} || '%'`)
+            .join(" OR ")
+        : "FALSE";
+
+    // Generate embedding for the search query and format it as a string
     const queryEmbedding = await generateEmbeddings(searchQuery);
     const embeddingString = `[${queryEmbedding.join(",")}]`;
 
+    // Build query values:
+    // $1: embeddingString for semantic search
+    // $2: userId for both semantic and keyword search
+    // $3...: keywords for the text search conditions
+    const queryValues = [embeddingString, userId, ...keywords];
+
+    // Run a combined query: semantic search on chunks and text search on full entries.
+    // Here, keyword_search assigns a fallback similarity value of 1.5.
     const result = await pool.query(
       `
-WITH keyword_search AS (
-  SELECT
-    journal_id,
-    entry_text,
-    entry_date,
-    image_path,
-    0 AS similarity
-  FROM journal_entries
-  WHERE user_id = $1
-    AND entry_text ILIKE '%' || $2 || '%'
-  LIMIT 5
-),
-semantic_search AS (
-  SELECT
-    journal_entries.journal_id,
-    journal_entries.entry_text,
-    journal_entries.entry_date,
-    journal_entries.image_path,
-    journal_embeddings.embedding <=> $3::vector AS similarity
-  FROM journal_entries
-  JOIN journal_embeddings ON journal_entries.journal_id = journal_embeddings.journal_id
-  WHERE journal_entries.user_id = $1
-  ORDER BY similarity ASC
-  LIMIT 5
-),
-combined AS (
-  SELECT * FROM keyword_search
-  UNION ALL
-  SELECT * FROM semantic_search
-)
-SELECT
-  journal_id,
-  entry_text,
-  entry_date,
-  image_path,
-  MIN(similarity) AS similarity
-FROM combined
-GROUP BY journal_id, entry_text, entry_date, image_path
-ORDER BY similarity ASC
-LIMIT 5;
+      WITH semantic_search AS (
+        SELECT 
+          journal_id,
+          MIN(embedding <-> $1::vector) AS similarity
+        FROM journal_entry_chunks
+        WHERE journal_id IN (
+          SELECT journal_id FROM journal_entries WHERE user_id = $2
+        )
+        GROUP BY journal_id
+        ORDER BY similarity ASC
+        LIMIT 5
+      ),
+      keyword_search AS (
+        SELECT 
+          journal_id,
+          1.5 AS similarity
+        FROM journal_entries
+        WHERE user_id = $2
+          AND (${keywordConditions})
+        LIMIT 5
+      ),
+      combined AS (
+        SELECT * FROM semantic_search
+        UNION
+        SELECT * FROM keyword_search
+      )
+      SELECT 
+        je.journal_id, 
+        je.entry_text,
+        je.entry_date,
+        MIN(similarity) AS similarity
+      FROM combined
+      JOIN journal_entries je ON combined.journal_id = je.journal_id
+      GROUP BY je.journal_id, je.entry_text, je.entry_date
+      ORDER BY similarity ASC
+      LIMIT 5;
       `,
-      [userId, searchQuery, embeddingString]
+      queryValues
     );
+
+    console.log(result.rows);
+
+    // Optionally, log the results for debugging
+    console.log("Search Query Embedding:", embeddingString);
+    console.log("Keyword Conditions:", keywordConditions);
+    console.log("Hybrid Search Results:", result.rows);
+
     res.json(result.rows);
   } catch (error) {
     console.error("Error in hybrid search:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
 
 const splitIntoSentences = (text: string): string[] => {
   return text.split(/(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|!)\s+(?=[A-Z])/);
