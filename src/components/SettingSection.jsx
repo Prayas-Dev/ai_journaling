@@ -28,20 +28,20 @@ function SettingSection({ userData, handleLogout }) {
       </div>
 
       {/* Dark Mode Toggle */}
-      <div className="flex justify-between items-center bg-white p-4 border border-neutral-200 rounded-lg shadow-sm">
+      {/* <div className="flex justify-between items-center bg-white p-4 border border-neutral-200 rounded-lg shadow-sm">
         <span>Dark Mode</span>
         <button className="bg-neutral-200 px-4 py-2 rounded-lg text-sm hover:bg-neutral-300 transition-all">
           Enable
         </button>
-      </div>
+      </div> */}
 
       {/* Notifications Toggle */}
-      <div className="flex justify-between items-center bg-white p-4 border border-neutral-200 rounded-lg shadow-sm">
+      {/* <div className="flex justify-between items-center bg-white p-4 border border-neutral-200 rounded-lg shadow-sm">
         <span>Enable Notifications</span>
         <button className="bg-neutral-200 px-4 py-2 rounded-lg text-sm hover:bg-neutral-300 transition-all">
           Toggle
         </button>
-      </div>
+      </div> */}
 
       {/* Logout Button */}
       <div className="flex justify-between items-center bg-white p-4 border border-neutral-200 rounded-lg shadow-sm">

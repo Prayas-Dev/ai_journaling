@@ -4,6 +4,7 @@ import { FaEdit } from "react-icons/fa";
 import PropTypes from "prop-types";
 import { toast, ToastContainer } from "react-toastify";
 import Modal from "react-modal";
+import TextareaAutosize from "react-textarea-autosize";
 
 function Journal(props) {
   console.log("Journal component props:", props);
@@ -31,43 +32,42 @@ function Journal(props) {
     });
   };
 
-  // Save conversation to backend
   const handleSaveJournal = async () => {
     try {
       toast.info("Saving journal...", {
         position: "top-right",
         autoClose: 2000,
       });
-
+  
       const storedUser = localStorage.getItem("userData");
       const userData = storedUser && JSON.parse(storedUser);
       const userId = userData?.sub || userData?.id;
       if (!userId) {
         throw new Error("User is not signed in.");
       }
-
+  
       const conversationText = displayedMessages
         .map((msg) => {
           const label = msg.role === "user" ? "User:" : "Prompt:";
           return `${label} ${msg.content}`;
         })
         .join("\n");
-
+  
       const finalText = newMessage.trim();
       const fullConversationText = finalText
         ? `${conversationText}\nUser: ${finalText}`
         : conversationText;
       const entryDate = new Date().toISOString().split("T")[0];
-
+  
       const payload = {
         userId: userId,
         entryText: fullConversationText,
         entry_date: entryDate,
         journalId: currentJournalId,
       };
-
+  
       console.log("Saving payload:", payload);
-
+  
       const response = await fetch("http://localhost:5000/api/journals/", {
         method: "POST",
         headers: {
@@ -75,36 +75,36 @@ function Journal(props) {
         },
         body: JSON.stringify(payload),
       });
-
+  
       if (!response.ok) throw new Error("Failed to save journal entry.");
       const data = await response.json();
       console.log("Journal saved successfully:", data);
-
-      // Update journal id if it was newly created
+  
+      // If newly created, update the current journal id.
       if (!currentJournalId && data?.journalId) {
         setCurrentJournalId(data.journalId);
       }
-      // Set emotion analysis if provided by backend
       if (data.emotions) {
         setEmotionAnalysis(data.emotions);
       }
-
-      // Construct candidate image URL
-      const journalIdForImage = currentJournalId || data?.journalId;
+  
+      // Use an absolute path for the candidate image.
+      // Adjust the path based on how your server serves static images.
+      const journalIdForImage = data?.journalId || currentJournalId;
       const candidateImage = journalIdForImage
-        ? `././images/${journalIdForImage}.png`
-        : "././images/8.png";
-
+        ? `/images/${journalIdForImage}.png`
+        : "/images/8.png";
+  
       const exists = await checkImageExists(candidateImage);
       if (exists) {
         setModalImageSrc(candidateImage);
       } else {
-        // Generate random number between 1 and 11 (inclusive)
+        // Generate random fallback image.
         const randomNumber = Math.floor(Math.random() * 11) + 1;
-        console.log(`Using fallback image: ././default_images/${randomNumber}.jpeg`);
-        setModalImageSrc(`././default_images/${randomNumber}.jpeg`);
+        console.log(`Using fallback image: /default_images/${randomNumber}.jpeg`);
+        setModalImageSrc(`/default_images/${randomNumber}.jpeg`);
       }
-
+  
       toast.success("Journal saved!", {
         position: "top-right",
         autoClose: 2000,
@@ -118,6 +118,7 @@ function Journal(props) {
       });
     }
   };
+  
 
   useEffect(() => {
     console.log("initialJournalId:", initialJournalId);
@@ -310,7 +311,7 @@ function Journal(props) {
               style={{ backgroundColor: "transparent" }}
             >
               {editingMessageId === message.id ? (
-                <textarea
+                <TextareaAutosize
                   value={editedMessage}
                   onChange={(e) => setEditedMessage(e.target.value)}
                   className="p-2 w-full resize-none focus:ring-0 outline-none bg-transparent"
@@ -330,7 +331,7 @@ function Journal(props) {
         <p className="text-gray-500 italic text-left">AI is thinking...</p>
       )}
       <div className="mt-6 flex flex-col items-start gap-2 w-full">
-        <textarea
+        <TextareaAutosize
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
           className="p-2 w-full resize-none focus:ring-0 outline-none bg-transparent"
@@ -364,7 +365,7 @@ function Journal(props) {
         onRequestClose={() => setIsImageModalOpen(false)}
         contentLabel="Saved Successfully"
         style={{
-          overlay: { backgroundColor: "rgba(0, 0, 0, 0.5)" },
+          overlay: { backgroundColor: "rgba(255, 255, 255, 1)" },
           content: {
             width: "auto",
             height: "auto",
@@ -440,7 +441,7 @@ function Journal(props) {
                           key={index}
                           className="text-xl text-center"
                         >
-                          {item.emotion} -> {item.emoji}
+                          {item.emotion} = {item.emoji}
                         </li>
                       ))}
                     </ul>
